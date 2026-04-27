@@ -38,3 +38,13 @@ week2-baseline
 - mean_episode_reward = -3856.37
 - max_episode_steps = 1425
 - min_episode_steps = 12
+
+## Baseline test after 20000 training steps
+- episodes = 48
+- success_rate_pct = 0.0
+- collision_rate_pct = 100.0
+- mean_episode_steps = 837.65
+- mean_episode_reward = -3657.31
+- max_episode_steps = 2143
+- min_episode_steps = 1
+- note = slight improvement in reward/steps, but still no successful episodes
