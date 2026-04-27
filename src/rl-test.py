@@ -1,6 +1,6 @@
 import os
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from wheelchair_env import WheelchairEnv
 from stable_baselines3.common.monitor import Monitor
 import csv
@@ -18,7 +18,7 @@ def run_model():
             return Monitor(WheelchairEnv(i, lidar_dim=LIDAR_DIM))
         return _init
 
-    env = SubprocVecEnv([env_fn(i) for i in range(N_ROBOTS)])
+    env = DummyVecEnv([env_fn(i) for i in range(N_ROBOTS)])
     path = f"./models/ppo_wheelchair_lidar{LIDAR_DIM}"
     vecnorm_path = f"./models/vecnormalize_lidar{LIDAR_DIM}.pkl"
     env = VecNormalize.load(vecnorm_path, env)

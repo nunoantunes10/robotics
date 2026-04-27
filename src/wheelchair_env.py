@@ -99,24 +99,14 @@ class WheelchairEnv(gym.Env):
     def get_reward(self, obs: np.ndarray, action: Tuple[int, int]) -> float:
         v, w = action
 
-        # Forward movement reward
-        r_distance = 1.0 if v > 0 else 0.0
+        front_sector = obs[170:190]
+        min_front = np.min(front_sector)
 
-        # Collision penalty (exponential when very close)
-        min_range = np.min(obs[140:220])  # Front sector on full 360 LiDAR
-        collision_threshold = 1.0
-        if min_range < collision_threshold:
-            r_collision = -np.exp(3 * (collision_threshold - min_range)) + 1
-        else:
-            r_collision = 0.0
+        r_forward = 0.5 if v > 0 else 0.0
+        r_clearance = 0.2 * min_front
+        r_danger = -2.0 if min_front < 0.75 else 0.0
 
-        # Main navigation reward
-        r_navigation = self.navigation_reward(obs, action)
-
-        # Penalize excessive turning when not needed
-        r_stability = self.stability_reward(obs, action)
-
-        total_reward = r_distance + r_collision + r_navigation + r_stability
+        total_reward = r_forward + r_clearance + r_danger
         return total_reward
 
     def navigation_reward(self, obs: np.ndarray, action: Tuple[int, int]) -> float:
@@ -159,20 +149,16 @@ class WheelchairEnv(gym.Env):
         return 0
 
     def stability_reward(self, obs: np.ndarray, action: Tuple[int, int]) -> float:
-        _, w = action
-
-        if w != 0:
-            return -0.2
         return 0
 
     def reset_preference(self):
         self.prev_pref = 0.0
 
     def collision_reward(self) -> int:
-        return -10
+        return -20
 
     def goal_reward(self) -> int:
-        return 0
+        return 50
 
     def send_action_get_obs(self, action: Tuple[int, int]) -> RobotState:
         self.socket.send_pyobj(action)
@@ -187,11 +173,24 @@ class WheelchairEnv(gym.Env):
         return np.zeros(self.obs_shape, dtype=np.float64)
 
     def reset(self, seed: int = None) -> Tuple[np.ndarray, dict]:
-        obs = self.no_obs()
-        self.prev_lidar = np.zeros(self.full_lidar_dim, dtype=np.float64)
+        self.prev_action = 0
         self.time_step = 0
         self.reset_preference()
-        return obs, {}
+
+        obs = self.no_obs()
+        self.prev_lidar = np.zeros(self.full_lidar_dim, dtype=np.float64)
+
+        info = {
+            "is_success": False,
+            "collision": False,
+            "goal_reached": False,
+            "time_step": self.time_step,
+            "reward": 0.0,
+            "env_id": self.env_id,
+            "lidar_dim": self.lidar_dim,
+        }
+
+        return obs, info
 
     def close(self):
         print("Closing environment " + str(self.env_id))
