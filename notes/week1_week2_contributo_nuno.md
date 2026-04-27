@@ -1,8 +1,5 @@
-# O que fiz nas primeiras 2 semanas
-
 ## Week 1
 - instalação do ambiente no Mac
-- setup de Python 3.11
 - criação da virtual environment
 - instalação das dependências do projeto
 - configuração do Webots para usar o Python da venv
@@ -19,7 +16,6 @@
 ## Week 2
 - organização da baseline
 - criação de notes e artifacts
-- limpeza do repositório com `.gitignore`
 - adição de métricas no `info` do ambiente
 - alteração do `rl-test.py` para guardar métricas por episódio
 - criação de `episode_metrics.csv`
@@ -36,10 +32,9 @@
 - guardar e carregar ficheiro `.pkl` do `VecNormalize`
 - teste de reward simplificado
 - investigação de problemas no reset
-- mudança do teste para `DummyVecEnv`
 - estabilização do teste final
 
-## Estado em que deixei
+## Checks
 - projeto a correr localmente
 - treino funcional
 - teste funcional
