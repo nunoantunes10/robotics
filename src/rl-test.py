@@ -10,12 +10,11 @@ N_ROBOTS = 9
 
 
 def run_model():
-    """Start vectorized environment to train model in parallel"""
+    """Start vectorized environment to test model in parallel"""
 
     def env_fn(i):
         def _init():
             return Monitor(WheelchairEnv(i))
-
         return _init
 
     env = SubprocVecEnv([env_fn(i) for i in range(N_ROBOTS)])
@@ -28,22 +27,43 @@ def run_model():
 
     model = PPO.load(path, env)
 
-    """
-    Test the model
-    """
     success_counts = [0] * N_ROBOTS
     episode_counts = [0] * N_ROBOTS
+    episode_rewards = [0.0] * N_ROBOTS
+    episode_rows = []
 
     obs = env.reset()
     for _ in range(TIME_STEPS):
         action, _ = model.predict(obs, deterministic=True)
         obs, rewards, dones, infos = env.step(action)
 
+        for i in range(N_ROBOTS):
+            episode_rewards[i] += float(rewards[i])
+
         for i, done in enumerate(dones):
             if done:
                 episode_counts[i] += 1
-                if infos[i].get("is_success", False):
+                success = infos[i].get("is_success", False)
+                collision = infos[i].get("collision", False)
+                goal_reached = infos[i].get("goal_reached", False)
+                time_step = infos[i].get("time_step", 0)
+                final_step_reward = infos[i].get("reward", 0.0)
+
+                if success:
                     success_counts[i] += 1
+
+                episode_rows.append([
+                    i,
+                    episode_counts[i],
+                    int(success),
+                    int(collision),
+                    int(goal_reached),
+                    time_step,
+                    episode_rewards[i],
+                    final_step_reward,
+                ])
+
+                episode_rewards[i] = 0.0
 
     for i in range(N_ROBOTS):
         if episode_counts[i] > 0:
@@ -62,6 +82,20 @@ def run_model():
                 100 * success_counts[i] / episode_counts[i] if episode_counts[i] else 0
             )
             writer.writerow([i, success_counts[i], episode_counts[i], f"{rate:.2f}"])
+
+    with open("episode_metrics.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "robot_id",
+            "episode_id",
+            "success",
+            "collision",
+            "goal_reached",
+            "episode_steps",
+            "episode_reward",
+            "final_step_reward",
+        ])
+        writer.writerows(episode_rows)
 
 
 if __name__ == "__main__":

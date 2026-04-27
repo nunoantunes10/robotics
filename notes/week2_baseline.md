@@ -29,3 +29,12 @@ week2-baseline
 - Changed rl-test.py model path to ./models/ppo_wheelchair
 - Removed forced sys.exit(0) from robot_client.py
 - Redirected trajectory saving to local logs/ folder
+
+## Instrumented baseline test summary
+- episodes = 47
+- success_rate_pct = 0.0
+- collision_rate_pct = 100.0
+- mean_episode_steps = 865.81
+- mean_episode_reward = -3856.37
+- max_episode_steps = 1425
+- min_episode_steps = 12

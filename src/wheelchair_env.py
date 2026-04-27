@@ -74,6 +74,11 @@ class WheelchairEnv(gym.Env):
         done = obs.collided or obs.goal_reached
         info = {
             "is_success": obs.goal_reached,
+            "collision": obs.collided,
+            "goal_reached": obs.goal_reached,
+            "time_step": self.time_step,
+            "reward": reward,
+            "env_id": self.env_id,
         }
 
         return obs.to_array(), reward, done, False, info

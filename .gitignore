@@ -9,3 +9,5 @@ artifacts/
 success_rates.csv
 
 worlds/*.wbproj
+
+episode_metrics.csv
