@@ -48,3 +48,26 @@ week2-baseline
 - max_episode_steps = 2143
 - min_episode_steps = 1
 - note = slight improvement in reward/steps, but still no successful episodes
+
+## Lidar rays experiment: 90 vs 360
+### lidar360
+- episodes = 48
+- success_rate_pct = 0.0
+- collision_rate_pct = 100.0
+- mean_episode_steps = 874.25
+- mean_episode_reward = -3773.09
+- max_episode_steps = 2060
+- min_episode_steps = 1
+
+### lidar90
+- episodes = 48
+- success_rate_pct = 0.0
+- collision_rate_pct = 100.0
+- mean_episode_steps = 852.96
+- mean_episode_reward = -3790.01
+- max_episode_steps = 1384
+- min_episode_steps = 1
+
+### quick_take
+- Performance is very similar between 360 and 90 rays in this short training budget.
+- lidar90 is slightly worse in mean reward.

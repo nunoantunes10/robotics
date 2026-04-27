@@ -7,6 +7,7 @@ import csv
 
 TIME_STEPS = 5_000
 N_ROBOTS = 9
+LIDAR_DIM = 90
 
 
 def run_model():
@@ -14,13 +15,13 @@ def run_model():
 
     def env_fn(i):
         def _init():
-            return Monitor(WheelchairEnv(i))
+            return Monitor(WheelchairEnv(i, lidar_dim=LIDAR_DIM))
         return _init
 
     env = SubprocVecEnv([env_fn(i) for i in range(N_ROBOTS)])
     env = VecNormalize(env, norm_obs=True, norm_reward=False)
 
-    path = "./models/ppo_wheelchair"
+    path = f"./models/ppo_wheelchair_lidar{LIDAR_DIM}"
     assert os.path.exists(
         path + ".zip"
     ), "Model path does not exist. Please train the model first."
@@ -61,6 +62,7 @@ def run_model():
                     time_step,
                     episode_rewards[i],
                     final_step_reward,
+                    LIDAR_DIM,
                 ])
 
                 episode_rewards[i] = 0.0
@@ -76,12 +78,12 @@ def run_model():
 
     with open("success_rates.csv", "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["robot_id", "successes", "episodes", "success_rate"])
+        writer.writerow(["robot_id", "successes", "episodes", "success_rate", "lidar_dim"])
         for i in range(N_ROBOTS):
             rate = (
                 100 * success_counts[i] / episode_counts[i] if episode_counts[i] else 0
             )
-            writer.writerow([i, success_counts[i], episode_counts[i], f"{rate:.2f}"])
+            writer.writerow([i, success_counts[i], episode_counts[i], f"{rate:.2f}", LIDAR_DIM])
 
     with open("episode_metrics.csv", "w", newline="") as f:
         writer = csv.writer(f)
@@ -94,6 +96,7 @@ def run_model():
             "episode_steps",
             "episode_reward",
             "final_step_reward",
+            "lidar_dim",
         ])
         writer.writerows(episode_rows)
 
