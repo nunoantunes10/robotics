@@ -84,7 +84,7 @@ class RobotClient(Supervisor):
 
             if collided or end:
                 with open(
-                    f"/home/marco-vb/ros/rl-webots/data/positions/{self.id}/t_{it}.csv",
+                    os.path.join(os.path.dirname(__file__), "../..", "logs", f"positions_{self.id}_{it}.csv"),
                     "w",
                     newline="",
                 ) as f:
@@ -109,7 +109,6 @@ class RobotClient(Supervisor):
 
         print("Trajectory saved, resetting robot...")
         self.reset_robot(rotate=False)
-        sys.exit(0)
 
     def get_action(self) -> np.ndarray:
         """Open pipe and read action from server"""

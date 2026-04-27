@@ -1,13 +1,13 @@
 import os
 import sys
-from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv
 from wheelchair_env import WheelchairEnv
 from stable_baselines3 import PPO
 from cnn_feature_extractor import LidarCNNFeatureExtractor
 from stable_baselines3.common.vec_env import VecNormalize
 from stable_baselines3.common.monitor import Monitor
 
-TRAIN_STEPS = 3_000_000
+TRAIN_STEPS = 2048
 N_ROBOTS = 9
 
 
@@ -23,7 +23,7 @@ def train_model(new=False):
 
             return _init
 
-        env = SubprocVecEnv([env_fn(i) for i in range(N_ROBOTS)])
+        env = DummyVecEnv([env_fn(i) for i in range(N_ROBOTS)])
         env = VecNormalize(env, norm_obs=True, norm_reward=False)
 
         path = "./models/ppo_wheelchair"
@@ -48,14 +48,14 @@ def train_model(new=False):
                 env,
                 policy_kwargs=policy_kwargs,
                 verbose=1,
-                n_steps=8192,
+                n_steps=128,
                 learning_rate=5e-5,
                 batch_size=1024,
                 n_epochs=20,
                 clip_range=0.1,
                 ent_coef=0.01,
-                device="cuda",
-                tensorboard_log="logs/ppo.log",
+                device="cpu",
+                tensorboard_log="logs",
             )
 
         model.learn(total_timesteps=TRAIN_STEPS, tb_log_name="ppo-run")

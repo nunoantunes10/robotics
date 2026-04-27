@@ -5,7 +5,7 @@ from wheelchair_env import WheelchairEnv
 from stable_baselines3.common.monitor import Monitor
 import csv
 
-TIME_STEPS = 60_000
+TIME_STEPS = 5_000
 N_ROBOTS = 9
 
 
@@ -21,7 +21,7 @@ def run_model():
     env = SubprocVecEnv([env_fn(i) for i in range(N_ROBOTS)])
     env = VecNormalize(env, norm_obs=True, norm_reward=False)
 
-    path = "./models/ppo-good"
+    path = "./models/ppo_wheelchair"
     assert os.path.exists(
         path + ".zip"
     ), "Model path does not exist. Please train the model first."
