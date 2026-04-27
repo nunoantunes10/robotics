@@ -7,9 +7,9 @@ from cnn_feature_extractor import LidarCNNFeatureExtractor
 from stable_baselines3.common.vec_env import VecNormalize
 from stable_baselines3.common.monitor import Monitor
 
-TRAIN_STEPS = 20000
+TRAIN_STEPS = 100000
 N_ROBOTS = 9
-LIDAR_DIM = 90
+LIDAR_DIM = 360
 
 
 def train_model(new=False):
@@ -24,11 +24,17 @@ def train_model(new=False):
 
             return _init
 
-        env = DummyVecEnv([env_fn(i) for i in range(N_ROBOTS)])
-        env = VecNormalize(env, norm_obs=True, norm_reward=False)
-
         path = f"./models/ppo_wheelchair_lidar{LIDAR_DIM}"
+        vecnorm_path = f"./models/vecnormalize_lidar{LIDAR_DIM}.pkl"
         prev_model = os.path.exists(path + ".zip")
+
+        env = DummyVecEnv([env_fn(i) for i in range(N_ROBOTS)])
+        if os.path.exists(vecnorm_path) and not new:
+            env = VecNormalize.load(vecnorm_path, env)
+            env.training = True
+            env.norm_reward = False
+        else:
+            env = VecNormalize(env, norm_obs=True, norm_reward=False)
 
         if prev_model and not new:
             print("Loading previous model")
@@ -63,9 +69,11 @@ def train_model(new=False):
     except KeyboardInterrupt:
         print("Training interrupted by user")
     finally:
+        print("Saving model and VecNormalize stats")
+        model.save(path)
+        env.save(vecnorm_path)
         print("Calling env.close()")
         env.close()
-        model.save(path)
 
 
 if __name__ == "__main__":

@@ -71,3 +71,13 @@ week2-baseline
 ### quick_take
 - Performance is very similar between 360 and 90 rays in this short training budget.
 - lidar90 is slightly worse in mean reward.
+
+## Baseline test after 100000 training steps with VecNormalize
+- episodes = 49
+- success_rate_pct = 0.0
+- collision_rate_pct = 100.0
+- mean_episode_steps = 809.76
+- mean_episode_reward = -3419.49
+- max_episode_steps = 1507
+- min_episode_steps = 1
+- note = reward improved, but still no successful episodes

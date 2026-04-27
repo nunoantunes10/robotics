@@ -7,7 +7,7 @@ import csv
 
 TIME_STEPS = 5_000
 N_ROBOTS = 9
-LIDAR_DIM = 90
+LIDAR_DIM = 360
 
 
 def run_model():
@@ -19,9 +19,12 @@ def run_model():
         return _init
 
     env = SubprocVecEnv([env_fn(i) for i in range(N_ROBOTS)])
-    env = VecNormalize(env, norm_obs=True, norm_reward=False)
-
     path = f"./models/ppo_wheelchair_lidar{LIDAR_DIM}"
+    vecnorm_path = f"./models/vecnormalize_lidar{LIDAR_DIM}.pkl"
+    env = VecNormalize.load(vecnorm_path, env)
+    env.training = False
+    env.norm_reward = False
+
     assert os.path.exists(
         path + ".zip"
     ), "Model path does not exist. Please train the model first."
