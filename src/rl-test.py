@@ -1,12 +1,13 @@
 import os
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from wheelchair_env import WheelchairEnv
 from stable_baselines3.common.monitor import Monitor
 import csv
 
 TIME_STEPS = 5_000
 N_ROBOTS = 9
+LIDAR_DIM = 360
 
 
 def run_model():
@@ -14,13 +15,16 @@ def run_model():
 
     def env_fn(i):
         def _init():
-            return Monitor(WheelchairEnv(i))
+            return Monitor(WheelchairEnv(i, lidar_dim=LIDAR_DIM))
         return _init
 
-    env = SubprocVecEnv([env_fn(i) for i in range(N_ROBOTS)])
-    env = VecNormalize(env, norm_obs=True, norm_reward=False)
+    env = DummyVecEnv([env_fn(i) for i in range(N_ROBOTS)])
+    path = f"./models/ppo_wheelchair_lidar{LIDAR_DIM}"
+    vecnorm_path = f"./models/vecnormalize_lidar{LIDAR_DIM}.pkl"
+    env = VecNormalize.load(vecnorm_path, env)
+    env.training = False
+    env.norm_reward = False
 
-    path = "./models/ppo_wheelchair"
     assert os.path.exists(
         path + ".zip"
     ), "Model path does not exist. Please train the model first."
@@ -61,6 +65,7 @@ def run_model():
                     time_step,
                     episode_rewards[i],
                     final_step_reward,
+                    LIDAR_DIM,
                 ])
 
                 episode_rewards[i] = 0.0
@@ -76,12 +81,12 @@ def run_model():
 
     with open("success_rates.csv", "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["robot_id", "successes", "episodes", "success_rate"])
+        writer.writerow(["robot_id", "successes", "episodes", "success_rate", "lidar_dim"])
         for i in range(N_ROBOTS):
             rate = (
                 100 * success_counts[i] / episode_counts[i] if episode_counts[i] else 0
             )
-            writer.writerow([i, success_counts[i], episode_counts[i], f"{rate:.2f}"])
+            writer.writerow([i, success_counts[i], episode_counts[i], f"{rate:.2f}", LIDAR_DIM])
 
     with open("episode_metrics.csv", "w", newline="") as f:
         writer = csv.writer(f)
@@ -94,6 +99,7 @@ def run_model():
             "episode_steps",
             "episode_reward",
             "final_step_reward",
+            "lidar_dim",
         ])
         writer.writerows(episode_rows)
 
