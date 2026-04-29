@@ -18,7 +18,11 @@ class RobotClient(Supervisor):
 
         context = zmq.Context()
         self.socket = context.socket(zmq.REP)
-        self.socket.connect("ipc:///tmp/giorgio_" + str(id))
+        if sys.platform == "win32":
+            port = 10000 + int(id)
+            self.socket.connect(f"tcp://127.0.0.1:{port}")
+        else:
+            self.socket.connect(f"ipc:///tmp/giorgio_{id}")
 
         self.timestep = int(self.getBasicTimeStep())
         self.positions = []
@@ -83,8 +87,10 @@ class RobotClient(Supervisor):
             end = self.detect_end()
 
             if collided or end:
+                log_dir = os.path.join(os.path.dirname(__file__), "../..", "logs")
+                os.makedirs(log_dir, exist_ok=True)
                 with open(
-                    os.path.join(os.path.dirname(__file__), "../..", "logs", f"positions_{self.id}_{it}.csv"),
+                    os.path.join(log_dir, f"positions_{self.id}_{it}.csv"),
                     "w",
                     newline="",
                 ) as f:
@@ -130,7 +136,18 @@ class RobotClient(Supervisor):
 
     def read_observation(self) -> np.ndarray:
         """Clip to avoid inf or nan values"""
-        return np.clip(np.array(self.lidar.getRangeImage()), 0, 10)
+        try:
+            image = self.lidar.getRangeImage()
+        except ValueError:
+            # Handle Webots ValueError: NULL pointer access before first update
+            image = None
+
+        if not image:
+            res = self.lidar.getHorizontalResolution()
+            layers = self.lidar.getNumberOfLayers()
+            image = [10.0] * (res * layers)
+            
+        return np.clip(np.array(image), 0, 10)
 
     def detect_collision(self) -> bool:
         """Bumper value is 1 if collision is detected, else 0"""

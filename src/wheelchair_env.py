@@ -4,6 +4,7 @@ import gymnasium as gym
 from gymnasium.spaces import Box
 import numpy as np
 import zmq
+import sys
 
 
 class WheelchairEnv(gym.Env):
@@ -12,7 +13,11 @@ class WheelchairEnv(gym.Env):
 
         context = zmq.Context()
         self.socket = context.socket(zmq.REQ)
-        self.socket.bind("ipc:///tmp/giorgio_" + str(env_id))
+        if sys.platform == "win32":
+            port = 10000 + int(env_id)
+            self.socket.bind(f"tcp://127.0.0.1:{port}")
+        else:
+            self.socket.bind(f"ipc:///tmp/giorgio_{env_id}")
 
         self.env_id = env_id
         self.full_lidar_dim = 360

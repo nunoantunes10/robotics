@@ -6,6 +6,7 @@ from stable_baselines3 import PPO
 from cnn_feature_extractor import LidarCNNFeatureExtractor
 from stable_baselines3.common.vec_env import VecNormalize
 from stable_baselines3.common.monitor import Monitor
+from torch import cuda
 
 TRAIN_STEPS = 100000
 N_ROBOTS = 9
@@ -61,7 +62,7 @@ def train_model(new=False):
                 n_epochs=20,
                 clip_range=0.1,
                 ent_coef=0.01,
-                device="cpu",
+                device="cuda" if cuda.is_available() else "cpu",
                 tensorboard_log="logs",
             )
 
