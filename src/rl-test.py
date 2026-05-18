@@ -1,3 +1,4 @@
+import argparse
 import os
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
@@ -10,7 +11,30 @@ N_ROBOTS = 9
 LIDAR_DIM = 360
 
 
-def run_model():
+def get_model_paths(nn_type: str):
+    paths = {
+        "cnn": (
+            f"./models/ppo_wheelchair_cnn_lidar{LIDAR_DIM}",
+            f"./models/vecnormalize_cnn_lidar{LIDAR_DIM}.pkl",
+            f"./models/ppo_wheelchair_lidar{LIDAR_DIM}",
+            f"./models/vecnormalize_lidar{LIDAR_DIM}.pkl",
+        ),
+        "lstm": (
+            f"./models/ppo_wheelchair_lstm_lidar{LIDAR_DIM}",
+            f"./models/vecnormalize_lstm_lidar{LIDAR_DIM}.pkl",
+            None,
+            None,
+        ),
+    }
+    path, vecnorm_path, legacy_path, legacy_vecnorm_path = paths[nn_type]
+    if not os.path.exists(path + ".zip") and legacy_path is not None:
+        path = legacy_path
+    if not os.path.exists(vecnorm_path) and legacy_vecnorm_path is not None:
+        vecnorm_path = legacy_vecnorm_path
+    return path, vecnorm_path
+
+
+def run_model(nn_type="cnn"):
     """Start vectorized environment to test model in parallel"""
 
     def env_fn(i):
@@ -19,15 +43,19 @@ def run_model():
         return _init
 
     env = DummyVecEnv([env_fn(i) for i in range(N_ROBOTS)])
-    path = f"./models/ppo_wheelchair_lidar{LIDAR_DIM}"
-    vecnorm_path = f"./models/vecnormalize_lidar{LIDAR_DIM}.pkl"
+    path, vecnorm_path = get_model_paths(nn_type)
+
+    if not os.path.exists(path + ".zip"):
+        raise FileNotFoundError(f"Model path does not exist: {path}.zip")
+    if not os.path.exists(vecnorm_path):
+        raise FileNotFoundError(f"VecNormalize path does not exist: {vecnorm_path}")
+
+    print(f"Testing {nn_type.upper()} model from {path}.zip")
+    print(f"Loading VecNormalize stats from {vecnorm_path}")
+
     env = VecNormalize.load(vecnorm_path, env)
     env.training = False
     env.norm_reward = False
-
-    assert os.path.exists(
-        path + ".zip"
-    ), "Model path does not exist. Please train the model first."
 
     model = PPO.load(path, env)
 
@@ -79,7 +107,10 @@ def run_model():
         else:
             print(f"Robot {i}: no completed episodes.")
 
-    with open("success_rates.csv", "w", newline="") as f:
+    success_path = f"success_rates_{nn_type}.csv"
+    episode_path = f"episode_metrics_{nn_type}.csv"
+
+    with open(success_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["robot_id", "successes", "episodes", "success_rate", "lidar_dim"])
         for i in range(N_ROBOTS):
@@ -88,7 +119,7 @@ def run_model():
             )
             writer.writerow([i, success_counts[i], episode_counts[i], f"{rate:.2f}", LIDAR_DIM])
 
-    with open("episode_metrics.csv", "w", newline="") as f:
+    with open(episode_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([
             "robot_id",
@@ -102,7 +133,21 @@ def run_model():
             "lidar_dim",
         ])
         writer.writerows(episode_rows)
+    print(f"Wrote {success_path}")
+    print(f"Wrote {episode_path}")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--nn",
+        choices=["cnn", "lstm"],
+        default="cnn",
+        help="Model type to test.",
+    )
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
-    run_model()
+    args = parse_args()
+    run_model(nn_type=args.nn)

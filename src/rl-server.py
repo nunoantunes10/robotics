@@ -1,23 +1,76 @@
+import argparse
 import os
-import sys
 from stable_baselines3.common.vec_env import DummyVecEnv
 from wheelchair_env import WheelchairEnv
 from stable_baselines3 import PPO
 from cnn_feature_extractor import LidarCNNFeatureExtractor
+from lstm_feature_extractor import LidarLSTMFeatureExtractor
 from stable_baselines3.common.vec_env import VecNormalize
 from stable_baselines3.common.monitor import Monitor
+from training_metrics import TrainingMetricsCallback
 from torch import cuda
 
-TRAIN_STEPS = 100000
+TRAIN_STEPS = 10000000
 N_ROBOTS = 9
 LIDAR_DIM = 360
 
 
-def train_model(new=False):
+def get_training_device():
+    device = "cuda" if cuda.is_available() else "cpu"
+    if device == "cuda":
+        print(f"Training device: CUDA ({cuda.get_device_name(0)})")
+    else:
+        print("Training device: CPU (CUDA not available)")
+    return device
+
+
+def get_model_config(nn_type: str):
+    configs = {
+        "cnn": {
+            "extractor": LidarCNNFeatureExtractor,
+            "path": f"./models/ppo_wheelchair_cnn_lidar{LIDAR_DIM}",
+            "vecnorm_path": f"./models/vecnormalize_cnn_lidar{LIDAR_DIM}.pkl",
+            "tb_log_name": f"ppo-cnn-lidar{LIDAR_DIM}",
+            "legacy_path": f"./models/ppo_wheelchair_lidar{LIDAR_DIM}",
+            "legacy_vecnorm_path": f"./models/vecnormalize_lidar{LIDAR_DIM}.pkl",
+        },
+        "lstm": {
+            "extractor": LidarLSTMFeatureExtractor,
+            "path": f"./models/ppo_wheelchair_lstm_lidar{LIDAR_DIM}",
+            "vecnorm_path": f"./models/vecnormalize_lstm_lidar{LIDAR_DIM}.pkl",
+            "tb_log_name": f"ppo-lstm-lidar{LIDAR_DIM}",
+            "legacy_path": None,
+            "legacy_vecnorm_path": None,
+        },
+    }
+    return configs[nn_type]
+
+
+def existing_path(path: str, legacy_path: str | None = None) -> str | None:
+    if os.path.exists(path + ".zip"):
+        return path
+    if legacy_path is not None and os.path.exists(legacy_path + ".zip"):
+        return legacy_path
+    return None
+
+
+def existing_vecnorm_path(path: str, legacy_path: str | None = None) -> str | None:
+    if os.path.exists(path):
+        return path
+    if legacy_path is not None and os.path.exists(legacy_path):
+        return legacy_path
+    return None
+
+
+def train_model(new=False, nn_type="cnn"):
     env = None
+    model = None
+    metrics_callback = None
 
     try:
         """Start vectorized environment to train model in parallel"""
+        config = get_model_config(nn_type)
+        device = get_training_device()
 
         def env_fn(i):
             def _init():
@@ -25,30 +78,32 @@ def train_model(new=False):
 
             return _init
 
-        path = f"./models/ppo_wheelchair_lidar{LIDAR_DIM}"
-        vecnorm_path = f"./models/vecnormalize_lidar{LIDAR_DIM}.pkl"
-        prev_model = os.path.exists(path + ".zip")
+        path = config["path"]
+        vecnorm_path = config["vecnorm_path"]
+        model_load_path = existing_path(path, config["legacy_path"])
+        vecnorm_load_path = existing_vecnorm_path(
+            vecnorm_path,
+            config["legacy_vecnorm_path"],
+        )
+        prev_model = model_load_path is not None
 
         env = DummyVecEnv([env_fn(i) for i in range(N_ROBOTS)])
-        if os.path.exists(vecnorm_path) and not new:
-            env = VecNormalize.load(vecnorm_path, env)
+        if vecnorm_load_path is not None and not new:
+            print(f"Loading VecNormalize stats from {vecnorm_load_path}")
+            env = VecNormalize.load(vecnorm_load_path, env)
             env.training = True
             env.norm_reward = False
         else:
             env = VecNormalize(env, norm_obs=True, norm_reward=False)
 
         if prev_model and not new:
-            print("Loading previous model")
-            model = PPO.load(path, env=env)
+            print(f"Loading previous {nn_type.upper()} model from {model_load_path}")
+            model = PPO.load(model_load_path, env=env, device=device)
         else:
-            if prev_model:
-                print("Deleting previous model")
-                os.remove(path + ".zip")
-
-            print("Creating new model")
+            print(f"Creating new {nn_type.upper()} model")
 
             policy_kwargs = dict(
-                features_extractor_class=LidarCNNFeatureExtractor,
+                features_extractor_class=config["extractor"],
                 features_extractor_kwargs=dict(features_dim=128),
             )
             model = PPO(
@@ -62,21 +117,51 @@ def train_model(new=False):
                 n_epochs=20,
                 clip_range=0.1,
                 ent_coef=0.01,
-                device="cuda" if cuda.is_available() else "cpu",
+                device=device,
                 tensorboard_log="logs",
             )
 
-        model.learn(total_timesteps=TRAIN_STEPS, tb_log_name=f"ppo-lidar{LIDAR_DIM}")
+        print(f"Saving checkpoints to {path}.zip")
+        print(f"Saving VecNormalize stats to {vecnorm_path}")
+        metrics_callback = TrainingMetricsCallback(nn_type=nn_type, lidar_dim=LIDAR_DIM)
+        model.learn(
+            total_timesteps=TRAIN_STEPS,
+            tb_log_name=config["tb_log_name"],
+            callback=metrics_callback,
+        )
     except KeyboardInterrupt:
         print("Training interrupted by user")
     finally:
-        print("Saving model and VecNormalize stats")
-        model.save(path)
-        env.save(vecnorm_path)
-        print("Calling env.close()")
-        env.close()
+        if metrics_callback is not None:
+            print("Saving training metrics and plots")
+            metrics_callback.save()
+
+        if model is not None and env is not None:
+            print("Saving model and VecNormalize stats")
+            model.save(path)
+            env.save(vecnorm_path)
+
+        if env is not None:
+            print("Calling env.close()")
+            env.close()
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--new",
+        action="store_true",
+        help="Start a fresh model for the selected network instead of loading a checkpoint.",
+    )
+    parser.add_argument(
+        "--nn",
+        choices=["cnn", "lstm"],
+        default="cnn",
+        help="Feature extractor network to use.",
+    )
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
-    new = sys.argv[1] == "--new" if len(sys.argv) > 1 else False
-    train_model(new)
+    args = parse_args()
+    train_model(new=args.new, nn_type=args.nn)
