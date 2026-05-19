@@ -96,6 +96,8 @@ class WheelchairEnv(gym.Env):
             "goal_distance": obs.goal_distance,
             "progress": reward_info["progress"],
             "min_front": reward_info["min_front"],
+            "left_clearance": reward_info["left_clearance"],
+            "right_clearance": reward_info["right_clearance"],
         }
 
         return self.state_to_array(obs), reward, done, False, info
@@ -105,7 +107,12 @@ class WheelchairEnv(gym.Env):
         reward_info = {
             "progress": None,
             "min_front": self.get_min_front(obs.lidar),
+            "left_clearance": None,
+            "right_clearance": None,
         }
+        left_clearance, right_clearance = self.get_side_clearance(obs.lidar)
+        reward_info["left_clearance"] = left_clearance
+        reward_info["right_clearance"] = right_clearance
 
         if obs.collided:
             return self.collision_reward(), reward_info
@@ -113,24 +120,43 @@ class WheelchairEnv(gym.Env):
             return self.goal_reward(), reward_info
 
         reward = -0.01
+        min_front = reward_info["min_front"]
+        progress = None
 
         if self.prev_goal_distance is not None and obs.goal_distance is not None:
             progress = self.prev_goal_distance - obs.goal_distance
             reward_info["progress"] = progress
-            reward += 10.0 * progress
+            progress_scale = 8.0
+            if progress > 0 and min_front is not None and min_front < 0.6:
+                progress_scale = 2.0
+            reward += progress_scale * progress
 
         if v > 0:
-            reward += 0.05
+            if min_front is None or min_front >= 1.0:
+                reward += 0.06
+            else:
+                reward -= 0.40
+            if w != 0:
+                if progress is not None and progress > 0:
+                    reward += 0.04
+                elif min_front is None or min_front >= 1.0:
+                    reward -= 0.02
         else:
-            reward -= 0.02
+            if w != 0 and progress is not None and progress > 0:
+                reward += 0.03
+            elif min_front is not None and min_front < 0.8 and w != 0:
+                reward += 0.03
+            else:
+                reward -= 0.04
 
         # Danger penalties use post-action LiDAR so near-obstacle states are not rewarded.
-        min_front = reward_info["min_front"]
         if min_front is not None:
-            if min_front < 1.0:
-                reward -= 0.25
+            if min_front < 0.8:
+                reward -= 0.50
             if min_front < 0.5:
-                reward -= 1.0
+                reward -= 1.50
+            if min_front < 0.3:
+                reward -= 3.0
 
         return float(reward), reward_info
 
@@ -140,6 +166,14 @@ class WheelchairEnv(gym.Env):
         if front_sector.size == 0:
             return None
         return float(np.min(front_sector))
+
+    @staticmethod
+    def get_side_clearance(lidar: np.ndarray) -> Tuple[float | None, float | None]:
+        left_sector = lidar[100:170]
+        right_sector = lidar[190:260]
+        left_clearance = float(np.mean(left_sector)) if left_sector.size else None
+        right_clearance = float(np.mean(right_sector)) if right_sector.size else None
+        return left_clearance, right_clearance
 
     def navigation_reward(self, obs: np.ndarray, action: Tuple[int, int]) -> float:
         _, w = action
@@ -190,7 +224,7 @@ class WheelchairEnv(gym.Env):
         return -500.0
 
     def goal_reward(self) -> float:
-        return 1000.0
+        return 2000.0
 
     def send_action_get_obs(self, action: Tuple[int, int]) -> RobotState:
         self.socket.send_pyobj(action)
@@ -224,6 +258,8 @@ class WheelchairEnv(gym.Env):
             "goal_distance": None,
             "progress": None,
             "min_front": None,
+            "left_clearance": None,
+            "right_clearance": None,
         }
 
         return obs, info
