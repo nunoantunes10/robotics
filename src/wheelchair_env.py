@@ -52,6 +52,7 @@ class WheelchairEnv(gym.Env):
         self.no_obs()
         self.prev_action = 0
         self.prev_pref = 0.0
+        self.prev_goal_distance = None
         self.time_step = 0
         self.time_limit = 20_000
         self.commitment_threshold = 2.5
@@ -76,16 +77,11 @@ class WheelchairEnv(gym.Env):
 
         self.prev_action = action
         action = self.to_action(action)
-        reward = self.get_reward(self.prev_lidar, action)
-
         obs = self.send_action_get_obs(action)
-
-        if obs.collided:
-            reward += self.collision_reward()
-        elif obs.goal_reached:
-            reward += self.goal_reward()
+        reward, reward_info = self.get_reward(obs, action)
 
         self.prev_lidar = obs.lidar
+        self.prev_goal_distance = obs.goal_distance
         self.time_step += 1
 
         done = obs.collided or obs.goal_reached
@@ -97,22 +93,53 @@ class WheelchairEnv(gym.Env):
             "reward": reward,
             "env_id": self.env_id,
             "lidar_dim": self.lidar_dim,
+            "goal_distance": obs.goal_distance,
+            "progress": reward_info["progress"],
+            "min_front": reward_info["min_front"],
         }
 
         return self.state_to_array(obs), reward, done, False, info
 
-    def get_reward(self, obs: np.ndarray, action: Tuple[int, int]) -> float:
+    def get_reward(self, obs: RobotState, action: Tuple[int, int]) -> Tuple[float, dict]:
         v, w = action
+        reward_info = {
+            "progress": None,
+            "min_front": self.get_min_front(obs.lidar),
+        }
 
-        front_sector = obs[170:190]
-        min_front = np.min(front_sector)
+        if obs.collided:
+            return self.collision_reward(), reward_info
+        if obs.goal_reached:
+            return self.goal_reward(), reward_info
 
-        r_forward = 0.5 if v > 0 else 0.0
-        r_clearance = 0.2 * min_front
-        r_danger = -2.0 if min_front < 0.75 else 0.0
+        reward = -0.01
 
-        total_reward = r_forward + r_clearance + r_danger
-        return total_reward
+        if self.prev_goal_distance is not None and obs.goal_distance is not None:
+            progress = self.prev_goal_distance - obs.goal_distance
+            reward_info["progress"] = progress
+            reward += 10.0 * progress
+
+        if v > 0:
+            reward += 0.05
+        else:
+            reward -= 0.02
+
+        # Danger penalties use post-action LiDAR so near-obstacle states are not rewarded.
+        min_front = reward_info["min_front"]
+        if min_front is not None:
+            if min_front < 1.0:
+                reward -= 0.25
+            if min_front < 0.5:
+                reward -= 1.0
+
+        return float(reward), reward_info
+
+    @staticmethod
+    def get_min_front(lidar: np.ndarray) -> float | None:
+        front_sector = lidar[170:190]
+        if front_sector.size == 0:
+            return None
+        return float(np.min(front_sector))
 
     def navigation_reward(self, obs: np.ndarray, action: Tuple[int, int]) -> float:
         _, w = action
@@ -159,11 +186,11 @@ class WheelchairEnv(gym.Env):
     def reset_preference(self):
         self.prev_pref = 0.0
 
-    def collision_reward(self) -> int:
-        return -20
+    def collision_reward(self) -> float:
+        return -500.0
 
-    def goal_reward(self) -> int:
-        return 50
+    def goal_reward(self) -> float:
+        return 1000.0
 
     def send_action_get_obs(self, action: Tuple[int, int]) -> RobotState:
         self.socket.send_pyobj(action)
@@ -180,6 +207,7 @@ class WheelchairEnv(gym.Env):
     def reset(self, seed: int = None) -> Tuple[np.ndarray, dict]:
         self.prev_action = 0
         self.time_step = 0
+        self.prev_goal_distance = None
         self.reset_preference()
 
         obs = self.no_obs()
@@ -193,6 +221,9 @@ class WheelchairEnv(gym.Env):
             "reward": 0.0,
             "env_id": self.env_id,
             "lidar_dim": self.lidar_dim,
+            "goal_distance": None,
+            "progress": None,
+            "min_front": None,
         }
 
         return obs, info

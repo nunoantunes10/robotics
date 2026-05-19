@@ -11,6 +11,18 @@ import zmq
 
 
 class RobotClient(Supervisor):
+    GOAL_POSITIONS = {
+        0: (-4.25, -2.3),
+        1: (-2.75, -2.3),
+        2: (-1.26114, -2.31),
+        3: (0.25, -2.3),
+        4: (3.96, -0.7),
+        5: (-1.74, 0.37),
+        6: (-1.05, 0.37),
+        7: (-2.55326, 1.63735),
+        8: (-1.04326, 1.62735),
+    }
+
     def __init__(self, id: int):
         super(RobotClient, self).__init__()
 
@@ -72,8 +84,8 @@ class RobotClient(Supervisor):
     def run(self) -> None:
         it = 0
         while self.step(self.timestep) != -1:
-            pos = self.robot_node.getField("translation").getSFVec3f()
-            self.positions.append(pos[:2])
+            start_pos = self.robot_node.getField("translation").getSFVec3f()
+            self.positions.append(start_pos[:2])
 
             action = self.get_action()
             if action.shape != (2,):
@@ -85,6 +97,8 @@ class RobotClient(Supervisor):
             lidar = self.read_observation()
             collided = self.detect_collision()
             end = self.detect_end()
+            pos = self.robot_node.getField("translation").getSFVec3f()
+            goal_distance = self.get_goal_distance(pos)
 
             if collided or end:
                 log_dir = os.path.join(os.path.dirname(__file__), "../..", "logs")
@@ -107,6 +121,7 @@ class RobotClient(Supervisor):
                 prev_action=0,  # placeholder, will be set in env
                 collided=collided,
                 goal_reached=end,
+                goal_distance=goal_distance,
             )
 
             self.send_observation(state)
@@ -133,6 +148,15 @@ class RobotClient(Supervisor):
         right_speed = action[0] + action[1] * self.l / 2
         self.left_motor.setVelocity(left_speed)
         self.right_motor.setVelocity(right_speed)
+
+    def get_goal_distance(self, position) -> float | None:
+        goal = self.GOAL_POSITIONS.get(self.id)
+        if goal is None:
+            return None
+
+        dx = position[0] - goal[0]
+        dy = position[1] - goal[1]
+        return float(np.hypot(dx, dy))
 
     def read_observation(self) -> np.ndarray:
         """Clip to avoid inf or nan values"""
