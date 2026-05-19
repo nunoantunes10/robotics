@@ -3,12 +3,12 @@ import sys
 from stable_baselines3.common.vec_env import DummyVecEnv
 from wheelchair_env import WheelchairEnv
 from stable_baselines3 import PPO
-from cnn_feature_extractor import LidarCNNFeatureExtractor
+from manual_feature_extractor import ManualFeatureExtractor
 from stable_baselines3.common.vec_env import VecNormalize
 from stable_baselines3.common.monitor import Monitor
 from torch import cuda
 
-TRAIN_STEPS = 100000
+TRAIN_STEPS = 3_000_000
 N_ROBOTS = 9
 LIDAR_DIM = 360
 
@@ -48,15 +48,15 @@ def train_model(new=False):
             print("Creating new model")
 
             policy_kwargs = dict(
-                features_extractor_class=LidarCNNFeatureExtractor,
+                features_extractor_class=ManualFeatureExtractor,
                 features_extractor_kwargs=dict(features_dim=128),
             )
             model = PPO(
-                "CnnPolicy",
+                "MlpPolicy",
                 env,
                 policy_kwargs=policy_kwargs,
                 verbose=1,
-                n_steps=128,
+                n_steps=8192,
                 learning_rate=5e-5,
                 batch_size=1024,
                 n_epochs=20,

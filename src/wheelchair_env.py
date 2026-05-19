@@ -104,14 +104,24 @@ class WheelchairEnv(gym.Env):
     def get_reward(self, obs: np.ndarray, action: Tuple[int, int]) -> float:
         v, w = action
 
-        front_sector = obs[170:190]
-        min_front = np.min(front_sector)
 
-        r_forward = 0.5 if v > 0 else 0.0
-        r_clearance = 0.2 * min_front
-        r_danger = -2.0 if min_front < 0.75 else 0.0
+        r_distance = 1.0 if v > 0 else 0.0
 
-        total_reward = r_forward + r_clearance + r_danger
+        # Collision penalty (exponential when very close)
+        min_range = np.min(obs[140:220])  # Front sector
+        collision_threshold = 1.0
+        if min_range < collision_threshold:
+            r_collision = -np.exp(3 * (collision_threshold - min_range)) + 1
+        else:
+            r_collision = 0.0
+
+        # Main navigation reward - replaces both direction_reward and early_side_commitment
+        r_navigation = self.navigation_reward(obs, action)
+
+        # Penalize excessive turning when not needed
+        r_stability = self.stability_reward(obs, action)
+
+        total_reward = r_distance + r_collision + r_navigation + r_stability
         return total_reward
 
     def navigation_reward(self, obs: np.ndarray, action: Tuple[int, int]) -> float:
@@ -154,6 +164,11 @@ class WheelchairEnv(gym.Env):
         return 0
 
     def stability_reward(self, obs: np.ndarray, action: Tuple[int, int]) -> float:
+        _, w = action
+
+        # Light penalty for turning (encourages smoother paths)
+        if w != 0:
+            return -0.2
         return 0
 
     def reset_preference(self):
@@ -163,7 +178,7 @@ class WheelchairEnv(gym.Env):
         return -20
 
     def goal_reward(self) -> int:
-        return 50
+        return 0
 
     def send_action_get_obs(self, action: Tuple[int, int]) -> RobotState:
         self.socket.send_pyobj(action)
