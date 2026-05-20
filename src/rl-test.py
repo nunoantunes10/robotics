@@ -13,25 +13,26 @@ LIDAR_DIM = 360
 
 def get_model_paths(nn_type: str):
     paths = {
-        "cnn": (
-            f"./models/ppo_wheelchair_cnn_lidar{LIDAR_DIM}",
-            f"./models/vecnormalize_cnn_lidar{LIDAR_DIM}.pkl",
-            f"./models/ppo_wheelchair_lidar{LIDAR_DIM}",
-            f"./models/vecnormalize_lidar{LIDAR_DIM}.pkl",
-        ),
-        "lstm": (
-            f"./models/ppo_wheelchair_lstm_lidar{LIDAR_DIM}",
-            f"./models/vecnormalize_lstm_lidar{LIDAR_DIM}.pkl",
-            None,
-            None,
-        ),
+        "cnn": {
+            "path": f"./models/ppo_wheelchair_cnn_goal_v2_lidar{LIDAR_DIM}",
+            "best_path": f"./models/ppo_wheelchair_cnn_goal_v2_lidar{LIDAR_DIM}_best",
+            "vecnorm_path": f"./models/vecnormalize_cnn_goal_v2_lidar{LIDAR_DIM}.pkl",
+            "best_vecnorm_path": f"./models/vecnormalize_cnn_goal_v2_lidar{LIDAR_DIM}_best.pkl",
+        },
+        "lstm": {
+            "path": f"./models/ppo_wheelchair_lstm_goal_v3_lidar{LIDAR_DIM}",
+            "best_path": f"./models/ppo_wheelchair_lstm_goal_v3_lidar{LIDAR_DIM}_best",
+            "vecnorm_path": f"./models/vecnormalize_lstm_goal_v3_lidar{LIDAR_DIM}.pkl",
+            "best_vecnorm_path": f"./models/vecnormalize_lstm_goal_v3_lidar{LIDAR_DIM}_best.pkl",
+        },
     }
-    path, vecnorm_path, legacy_path, legacy_vecnorm_path = paths[nn_type]
-    if not os.path.exists(path + ".zip") and legacy_path is not None:
-        path = legacy_path
-    if not os.path.exists(vecnorm_path) and legacy_vecnorm_path is not None:
-        vecnorm_path = legacy_vecnorm_path
-    return path, vecnorm_path
+    config = paths[nn_type]
+    if (
+        os.path.exists(config["best_path"] + ".zip")
+        and os.path.exists(config["best_vecnorm_path"])
+    ):
+        return config["best_path"], config["best_vecnorm_path"], True
+    return config["path"], config["vecnorm_path"], False
 
 
 def run_model(nn_type="cnn"):
@@ -43,21 +44,23 @@ def run_model(nn_type="cnn"):
         return _init
 
     env = DummyVecEnv([env_fn(i) for i in range(N_ROBOTS)])
-    path, vecnorm_path = get_model_paths(nn_type)
+    path, vecnorm_path, best_checkpoint = get_model_paths(nn_type)
 
     if not os.path.exists(path + ".zip"):
         raise FileNotFoundError(f"Model path does not exist: {path}.zip")
     if not os.path.exists(vecnorm_path):
         raise FileNotFoundError(f"VecNormalize path does not exist: {vecnorm_path}")
 
-    print(f"Testing {nn_type.upper()} model from {path}.zip")
+    checkpoint_label = "best" if best_checkpoint else "final"
+    print(f"Testing {checkpoint_label} {nn_type.upper()} model from {path}.zip")
     print(f"Loading VecNormalize stats from {vecnorm_path}")
 
     env = VecNormalize.load(vecnorm_path, env)
     env.training = False
+    env.norm_obs = False
     env.norm_reward = False
 
-    model = PPO.load(path, env)
+    model = PPO.load(path, env=env)
 
     success_counts = [0] * N_ROBOTS
     episode_counts = [0] * N_ROBOTS

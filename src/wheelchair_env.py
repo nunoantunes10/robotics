@@ -8,11 +8,25 @@ import sys
 
 
 class WheelchairEnv(gym.Env):
+    TERMINATE_COMMAND = -1
+    RESET_COMMAND = -2
+    SOCKET_TIMEOUT_MS = 10_000
+    STOP_ACTION = 5
+    MAX_LIDAR_RANGE = 10.0
+    MAX_GOAL_DISTANCE = 10.0
+    PROGRESS_CLIP = 0.25
+    TIMEOUT_REWARD = -25.0
+
     def __init__(self, env_id: int, lidar_dim: int = 360):
         super(WheelchairEnv, self).__init__()
 
-        context = zmq.Context()
-        self.socket = context.socket(zmq.REQ)
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.REQ)
+        self.socket.setsockopt(zmq.LINGER, 0)
+        self.socket.setsockopt(zmq.RCVTIMEO, self.SOCKET_TIMEOUT_MS)
+        self.socket.setsockopt(zmq.SNDTIMEO, self.SOCKET_TIMEOUT_MS)
+        self.waiting_for_reply = False
+        self.last_request = None
         if sys.platform == "win32":
             port = 10000 + int(env_id)
             self.socket.bind(f"tcp://127.0.0.1:{port}")
@@ -26,7 +40,7 @@ class WheelchairEnv(gym.Env):
         """
         Action and state space definition.
         Robot will be able to control speed of left and right wheels between 0 and 5.
-        State is a vector of lidar readings and the last action taken (as integer).
+        State is normalized LiDAR, goal direction/distance, and previous action one-hot.
         """
         self.action_space = gym.spaces.Discrete(6)
 
@@ -42,19 +56,33 @@ class WheelchairEnv(gym.Env):
             ]
         )[x]
 
-        self.observation_space = Box(
-            low=np.concatenate([np.full(self.lidar_dim, 0.0), [0]]),
-            high=np.concatenate([np.full(self.lidar_dim, 10.0), [5]]),
-            dtype=np.float64,
+        self.goal_context_dim = 3
+        self.prev_action_dim = self.action_space.n
+        low = np.concatenate(
+            [
+                np.zeros(self.lidar_dim, dtype=np.float32),
+                np.array([0.0, -1.0, -1.0], dtype=np.float32),
+                np.zeros(self.prev_action_dim, dtype=np.float32),
+            ]
         )
+        high = np.concatenate(
+            [
+                np.ones(self.lidar_dim, dtype=np.float32),
+                np.array([1.0, 1.0, 1.0], dtype=np.float32),
+                np.ones(self.prev_action_dim, dtype=np.float32),
+            ]
+        )
+        self.observation_space = Box(low=low, high=high, dtype=np.float32)
         self.obs_shape = self.observation_space.shape
 
         self.no_obs()
-        self.prev_action = 0
+        self.prev_action = self.STOP_ACTION
         self.prev_pref = 0.0
         self.prev_goal_distance = None
+        self.cached_reset_obs = None
+        self.last_state = None
         self.time_step = 0
-        self.time_limit = 20_000
+        self.time_limit = 3_000
         self.commitment_threshold = 2.5
 
     def downsample_lidar(self, lidar: np.ndarray) -> np.ndarray:
@@ -65,47 +93,93 @@ class WheelchairEnv(gym.Env):
         return lidar[indices].astype(np.float64)
 
     def state_to_array(self, state: RobotState) -> np.ndarray:
-        lidar = self.downsample_lidar(state.lidar)
-        return np.concatenate([lidar, [state.prev_action]]).astype(np.float64)
+        lidar = np.nan_to_num(
+            self.downsample_lidar(state.lidar) / self.MAX_LIDAR_RANGE,
+            nan=1.0,
+            posinf=1.0,
+            neginf=0.0,
+        )
+        lidar = np.clip(
+            lidar,
+            0.0,
+            1.0,
+        )
+        goal_distance = self.normalize_goal_distance(state.goal_distance)
+        goal_bearing_sin = np.nan_to_num(state.goal_bearing_sin, nan=0.0)
+        goal_bearing_cos = np.nan_to_num(state.goal_bearing_cos, nan=1.0)
+        goal_bearing_sin = np.clip(goal_bearing_sin, -1.0, 1.0)
+        goal_bearing_cos = np.clip(goal_bearing_cos, -1.0, 1.0)
+        prev_action = self.prev_action_one_hot(state.prev_action)
 
-    def step(self, action: int) -> Tuple[np.ndarray, float, bool, dict]:
+        return np.concatenate(
+            [
+                lidar,
+                [goal_distance, goal_bearing_sin, goal_bearing_cos],
+                prev_action,
+            ]
+        ).astype(np.float32)
+
+    def normalize_goal_distance(self, goal_distance: float | None) -> float:
+        if goal_distance is None:
+            return 1.0
+        goal_distance = np.nan_to_num(goal_distance, nan=self.MAX_GOAL_DISTANCE)
+        return float(np.clip(goal_distance / self.MAX_GOAL_DISTANCE, 0.0, 1.0))
+
+    def prev_action_one_hot(self, prev_action: int) -> np.ndarray:
+        one_hot = np.zeros(self.prev_action_dim, dtype=np.float32)
+        if 0 <= int(prev_action) < self.prev_action_dim:
+            one_hot[int(prev_action)] = 1.0
+        return one_hot
+
+    def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, dict]:
         """
         Takes an action and returns the next observation, reward, done flag, and info.
         :param action: Action to be taken (int)
         :return: Tuple of (observation, reward, done, info)
         """
 
-        self.prev_action = action
-        action = self.to_action(action)
-        obs = self.send_action_get_obs(action)
-        reward, reward_info = self.get_reward(obs, action)
+        self.prev_action = int(action)
+        motor_action = self.to_action(self.prev_action)
+        obs = self.send_action_get_obs(motor_action)
+        reward, reward_info = self.get_reward(obs, motor_action)
 
         self.prev_lidar = obs.lidar
         self.prev_goal_distance = obs.goal_distance
+        self.last_state = obs
         self.time_step += 1
 
-        done = obs.collided or obs.goal_reached
+        terminated = obs.collided or obs.goal_reached
+        truncated = self.time_step >= self.time_limit and not terminated
+        if truncated:
+            reward += self.timeout_reward()
+        if terminated:
+            self.cached_reset_obs = obs
         info = {
             "is_success": obs.goal_reached,
             "collision": obs.collided,
             "goal_reached": obs.goal_reached,
+            "time_limit_reached": truncated,
             "time_step": self.time_step,
             "reward": reward,
             "env_id": self.env_id,
             "lidar_dim": self.lidar_dim,
             "goal_distance": obs.goal_distance,
+            "goal_bearing_sin": obs.goal_bearing_sin,
+            "goal_bearing_cos": obs.goal_bearing_cos,
             "progress": reward_info["progress"],
+            "raw_progress": reward_info["raw_progress"],
             "min_front": reward_info["min_front"],
             "left_clearance": reward_info["left_clearance"],
             "right_clearance": reward_info["right_clearance"],
         }
 
-        return self.state_to_array(obs), reward, done, False, info
+        return self.state_to_array(obs), reward, terminated, truncated, info
 
     def get_reward(self, obs: RobotState, action: Tuple[int, int]) -> Tuple[float, dict]:
         v, w = action
         reward_info = {
             "progress": None,
+            "raw_progress": None,
             "min_front": self.get_min_front(obs.lidar),
             "left_clearance": None,
             "right_clearance": None,
@@ -119,44 +193,43 @@ class WheelchairEnv(gym.Env):
         if obs.goal_reached:
             return self.goal_reward(), reward_info
 
-        reward = -0.01
+        reward = -0.005
         min_front = reward_info["min_front"]
         progress = None
 
         if self.prev_goal_distance is not None and obs.goal_distance is not None:
-            progress = self.prev_goal_distance - obs.goal_distance
+            raw_progress = self.prev_goal_distance - obs.goal_distance
+            progress = float(
+                np.clip(raw_progress, -self.PROGRESS_CLIP, self.PROGRESS_CLIP)
+            )
+            reward_info["raw_progress"] = raw_progress
             reward_info["progress"] = progress
-            progress_scale = 8.0
-            if progress > 0 and min_front is not None and min_front < 0.6:
+            progress_scale = 6.0
+            if min_front is not None and min_front < 0.6:
                 progress_scale = 2.0
             reward += progress_scale * progress
 
         if v > 0:
             if min_front is None or min_front >= 1.0:
-                reward += 0.06
+                reward += 0.03
             else:
-                reward -= 0.40
-            if w != 0:
-                if progress is not None and progress > 0:
-                    reward += 0.04
-                elif min_front is None or min_front >= 1.0:
-                    reward -= 0.02
-        else:
+                reward -= 0.25
             if w != 0 and progress is not None and progress > 0:
-                reward += 0.03
-            elif min_front is not None and min_front < 0.8 and w != 0:
-                reward += 0.03
+                reward += 0.02
+        else:
+            if min_front is not None and min_front < 0.8 and w != 0:
+                reward += 0.02
             else:
-                reward -= 0.04
+                reward -= 0.03
 
         # Danger penalties use post-action LiDAR so near-obstacle states are not rewarded.
         if min_front is not None:
             if min_front < 0.8:
-                reward -= 0.50
+                reward -= 0.25
             if min_front < 0.5:
-                reward -= 1.50
+                reward -= 0.75
             if min_front < 0.3:
-                reward -= 3.0
+                reward -= 1.50
 
         return float(reward), reward_info
 
@@ -221,52 +294,132 @@ class WheelchairEnv(gym.Env):
         self.prev_pref = 0.0
 
     def collision_reward(self) -> float:
-        return -500.0
+        return -50.0
 
     def goal_reward(self) -> float:
-        return 2000.0
+        return 100.0
+
+    def timeout_reward(self) -> float:
+        return self.TIMEOUT_REWARD
 
     def send_action_get_obs(self, action: Tuple[int, int]) -> RobotState:
-        self.socket.send_pyobj(action)
+        self.send_request(action)
         return self.get_observation()
 
+    def send_reset_get_obs(self) -> RobotState:
+        self.send_request([self.RESET_COMMAND])
+        return self.get_observation()
+
+    def send_request(self, request) -> None:
+        if self.waiting_for_reply:
+            raise RuntimeError(
+                f"Env {self.env_id} cannot send {request}; still waiting for "
+                f"reply to {self.last_request}"
+            )
+        try:
+            self.socket.send_pyobj(request)
+        except zmq.Again as exc:
+            raise TimeoutError(
+                f"Env {self.env_id} timed out sending request {request}"
+            ) from exc
+        except zmq.ZMQError as exc:
+            raise RuntimeError(
+                f"Env {self.env_id} failed sending request {request}: {exc}"
+            ) from exc
+        self.waiting_for_reply = True
+        self.last_request = request
+
     def get_observation(self) -> RobotState:
-        state = self.socket.recv_pyobj()
+        try:
+            state = self.socket.recv_pyobj()
+        except zmq.Again as exc:
+            raise TimeoutError(
+                f"Env {self.env_id} timed out waiting for reply to "
+                f"{self.last_request}. Check robot_client controller {self.env_id}."
+            ) from exc
+        except zmq.ZMQError as exc:
+            raise RuntimeError(
+                f"Env {self.env_id} failed receiving reply to "
+                f"{self.last_request}: {exc}"
+            ) from exc
+        self.waiting_for_reply = False
         state.prev_action = self.prev_action
         return state
 
     def no_obs(self) -> np.ndarray:
-        return np.zeros(self.obs_shape, dtype=np.float64)
+        return np.zeros(self.obs_shape, dtype=np.float32)
 
-    def reset(self, seed: int = None) -> Tuple[np.ndarray, dict]:
-        self.prev_action = 0
+    def reset(self, seed: int = None, options: dict | None = None) -> Tuple[np.ndarray, dict]:
+        super().reset(seed=seed)
+
+        self.prev_action = self.STOP_ACTION
         self.time_step = 0
         self.prev_goal_distance = None
         self.reset_preference()
 
-        obs = self.no_obs()
-        self.prev_lidar = np.zeros(self.full_lidar_dim, dtype=np.float64)
+        if self.cached_reset_obs is not None:
+            obs = self.cached_reset_obs
+            self.cached_reset_obs = None
+        elif self.last_state is not None:
+            obs = self.last_state
+        else:
+            obs = None
+
+        if obs is not None:
+            obs.collided = False
+            obs.goal_reached = False
+            self.prev_lidar = obs.lidar
+            self.prev_goal_distance = obs.goal_distance
+            min_front = self.get_min_front(obs.lidar)
+            left_clearance, right_clearance = self.get_side_clearance(obs.lidar)
+            reset_obs = self.state_to_array(obs)
+            goal_distance = obs.goal_distance
+            goal_bearing_sin = obs.goal_bearing_sin
+            goal_bearing_cos = obs.goal_bearing_cos
+        else:
+            self.prev_lidar = np.zeros(self.full_lidar_dim, dtype=np.float64)
+            self.prev_goal_distance = None
+            min_front = None
+            left_clearance = None
+            right_clearance = None
+            reset_obs = self.no_obs()
+            goal_distance = None
+            goal_bearing_sin = 0.0
+            goal_bearing_cos = 1.0
 
         info = {
             "is_success": False,
             "collision": False,
             "goal_reached": False,
+            "time_limit_reached": False,
             "time_step": self.time_step,
             "reward": 0.0,
             "env_id": self.env_id,
             "lidar_dim": self.lidar_dim,
-            "goal_distance": None,
+            "goal_distance": goal_distance,
+            "goal_bearing_sin": goal_bearing_sin,
+            "goal_bearing_cos": goal_bearing_cos,
             "progress": None,
-            "min_front": None,
-            "left_clearance": None,
-            "right_clearance": None,
+            "raw_progress": None,
+            "min_front": min_front,
+            "left_clearance": left_clearance,
+            "right_clearance": right_clearance,
         }
 
-        return obs, info
+        return reset_obs, info
 
     def close(self):
         print("Closing environment " + str(self.env_id))
-        self.socket.send_pyobj([-1])
-        self.socket.close()
-        zmq.Context.instance().destroy()
+        if not self.waiting_for_reply:
+            try:
+                self.send_request([self.TERMINATE_COMMAND])
+            except Exception as exc:
+                print(f"Could not send terminate to env {self.env_id}: {exc}")
+        else:
+            print(
+                f"Env {self.env_id} is waiting for reply to {self.last_request}; "
+                "closing socket without terminate command"
+            )
+        self.socket.close(linger=0)
+        self.context.term()
         return super().close()

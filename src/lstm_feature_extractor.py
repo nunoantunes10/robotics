@@ -4,52 +4,78 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 
 class LidarLSTMFeatureExtractor(BaseFeaturesExtractor):
+    """
+    Compatibility name for the old ``--nn lstm`` pipeline.
+
+    This extractor is intentionally not recurrent. The previous implementation
+    treated one LiDAR scan as an LSTM sequence and kept only the final hidden
+    state, which made the policy sensitive to beam order and weak at preserving
+    local obstacle/gap geometry. The replacement uses spatial LiDAR features:
+    a small 1D CNN plus explicit sector min/mean distances.
+    """
+
     def __init__(
         self,
         observation_space,
         features_dim=128,
         num_actions=6,
-        embed_dim=8,
-        hidden_size=64,
-        num_layers=1,
+        num_sectors=12,
     ):
         super().__init__(observation_space, features_dim)
 
-        self.lidar_dim = observation_space.shape[0] - 1
-        self.num_actions = num_actions
+        self.context_dim = 3 + num_actions
+        self.lidar_dim = observation_space.shape[0] - self.context_dim
+        if self.lidar_dim <= 0:
+            raise ValueError("Observation space is too small for LiDAR plus context")
+        if num_sectors <= 0:
+            raise ValueError("num_sectors must be positive")
+        if num_sectors > self.lidar_dim:
+            raise ValueError("num_sectors cannot exceed the LiDAR dimension")
 
-        self.lstm = nn.LSTM(
-            input_size=1,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            batch_first=True,
+        self.num_sectors = num_sectors
+        self.sector_feature_dim = 2 * num_sectors
+        self.cnn_output_dim = 64 * 16
+
+        self.cnn = nn.Sequential(
+            nn.Conv1d(1, 32, kernel_size=7, padding=3, padding_mode="circular"),
+            nn.ReLU(),
+            nn.Conv1d(32, 64, kernel_size=5, stride=2, padding=2),
+            nn.ReLU(),
+            nn.Conv1d(64, 64, kernel_size=5, stride=2, padding=2),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool1d(16),
+            nn.Flatten(),
         )
-        self.embedding = nn.Embedding(num_actions + 1, embed_dim)
 
         self.linear = nn.Sequential(
-            nn.Linear(hidden_size + embed_dim, features_dim),
+            nn.Linear(
+                self.cnn_output_dim + self.sector_feature_dim + self.context_dim,
+                256,
+            ),
+            nn.ReLU(),
+            nn.Linear(256, features_dim),
             nn.ReLU(),
         )
 
     def forward(self, observations: torch.Tensor) -> torch.Tensor:
         """
         Assuming observation array is:
-        observations[:lidar_dim] --> LiDAR sequence
-        observations[lidar_dim] --> previous action
+        observations[:lidar_dim] --> normalized LiDAR scan
+        observations[lidar_dim:] --> goal context and previous action one-hot
         """
         lidar = observations[:, :self.lidar_dim]
-        prev_action = observations[:, self.lidar_dim].long()
+        context = observations[:, self.lidar_dim:]
 
-        _, (hidden, _) = self.lstm(lidar.unsqueeze(-1))
-        x = hidden[-1]
+        cnn_features = self.cnn(lidar.unsqueeze(1))
+        sector_features = self._sector_features(lidar)
 
-        prev_action_embedded_idx = torch.where(
-            prev_action == -1, self.num_actions, prev_action
-        )
-        prev_action_embedded_idx = torch.clamp(
-            prev_action_embedded_idx, 0, self.num_actions
-        )
-        embedded = self.embedding(prev_action_embedded_idx)
-
-        combined = torch.cat([x, embedded], dim=1)
+        combined = torch.cat([cnn_features, sector_features, context], dim=1)
         return self.linear(combined)
+
+    def _sector_features(self, lidar: torch.Tensor) -> torch.Tensor:
+        sectors = torch.tensor_split(lidar, self.num_sectors, dim=1)
+        features = []
+        for sector in sectors:
+            features.append(torch.min(sector, dim=1).values)
+            features.append(torch.mean(sector, dim=1))
+        return torch.stack(features, dim=1)

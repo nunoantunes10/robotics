@@ -1,16 +1,19 @@
 import csv
-import sys, os
+import os
+import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "../..", "src"))
 
 from robot_state import RobotState
 from controller import Supervisor
 import numpy as np
-import sys
 import zmq
 
 
 class RobotClient(Supervisor):
+    TERMINATE_COMMAND = -1
+    RESET_COMMAND = -2
+
     GOAL_POSITIONS = {
         0: (-4.25, -2.3),
         1: (-2.75, -2.3),
@@ -88,17 +91,24 @@ class RobotClient(Supervisor):
             self.positions.append(start_pos[:2])
 
             action = self.get_action()
-            if action.shape != (2,):
+
+            if self.is_command(action, self.TERMINATE_COMMAND):
                 break
+            if self.is_command(action, self.RESET_COMMAND):
+                self.update_motors(np.array([0.0, 0.0], dtype=np.float32))
+                self.reset_robot()
+                self.positions = []
+                self.send_observation(self.build_state(collided=False, goal_reached=False))
+                continue
+            if action.shape != (2,):
+                self.send_observation(self.build_state(collided=False, goal_reached=False))
+                continue
 
             self.update_motors(action)
 
             """Observation sent to server is lidar readings + collision/end flag"""
-            lidar = self.read_observation()
             collided = self.detect_collision()
             end = self.detect_end()
-            pos = self.robot_node.getField("translation").getSFVec3f()
-            goal_distance = self.get_goal_distance(pos)
 
             if collided or end:
                 log_dir = os.path.join(os.path.dirname(__file__), "../..", "logs")
@@ -116,14 +126,7 @@ class RobotClient(Supervisor):
                 it += 1
                 self.reset_robot()
 
-            state = RobotState(
-                lidar=lidar,
-                prev_action=0,  # placeholder, will be set in env
-                collided=collided,
-                goal_reached=end,
-                goal_distance=goal_distance,
-            )
-
+            state = self.build_state(collided=collided, goal_reached=end)
             self.send_observation(state)
 
         print("Simulation ended, saving trajectory...")
@@ -139,6 +142,29 @@ class RobotClient(Supervisor):
         """Open pipe and send observation to server"""
         self.socket.send_pyobj(obs)
 
+    @staticmethod
+    def is_command(action: np.ndarray, command: int) -> bool:
+        return action.shape == (1,) and int(action[0]) == command
+
+    def build_state(self, collided: bool, goal_reached: bool) -> RobotState:
+        lidar = self.read_observation()
+        pos = self.robot_node.getField("translation").getSFVec3f()
+        rotation = self.robot_node.getField("rotation").getSFRotation()
+        goal_distance, goal_bearing_sin, goal_bearing_cos = self.get_goal_features(
+            pos,
+            rotation,
+        )
+
+        return RobotState(
+            lidar=lidar,
+            prev_action=0,  # placeholder, will be set in env
+            collided=collided,
+            goal_reached=goal_reached,
+            goal_distance=goal_distance,
+            goal_bearing_sin=goal_bearing_sin,
+            goal_bearing_cos=goal_bearing_cos,
+        )
+
     def update_motors(self, action: np.ndarray) -> None:
         """
         Action is pair linear velocity, angular velocity
@@ -150,13 +176,34 @@ class RobotClient(Supervisor):
         self.right_motor.setVelocity(right_speed)
 
     def get_goal_distance(self, position) -> float | None:
+        distance, _, _ = self.get_goal_features(
+            position,
+            self.robot_node.getField("rotation").getSFRotation(),
+        )
+        return distance
+
+    def get_goal_features(self, position, rotation) -> tuple[float | None, float, float]:
         goal = self.GOAL_POSITIONS.get(self.id)
         if goal is None:
-            return None
+            return None, 0.0, 1.0
 
-        dx = position[0] - goal[0]
-        dy = position[1] - goal[1]
-        return float(np.hypot(dx, dy))
+        dx = goal[0] - position[0]
+        dy = goal[1] - position[1]
+        goal_distance = float(np.hypot(dx, dy))
+        target_yaw = float(np.arctan2(dy, dx))
+        robot_yaw = self.yaw_from_rotation(rotation)
+        goal_bearing = self.normalize_angle(target_yaw - robot_yaw)
+        return goal_distance, float(np.sin(goal_bearing)), float(np.cos(goal_bearing))
+
+    @staticmethod
+    def yaw_from_rotation(rotation) -> float:
+        if len(rotation) < 4:
+            return 0.0
+        return float(rotation[2] * rotation[3])
+
+    @staticmethod
+    def normalize_angle(angle: float) -> float:
+        return float((angle + np.pi) % (2 * np.pi) - np.pi)
 
     def read_observation(self) -> np.ndarray:
         """Clip to avoid inf or nan values"""

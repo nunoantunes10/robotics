@@ -1,5 +1,6 @@
 import argparse
 import os
+import traceback
 from stable_baselines3.common.vec_env import DummyVecEnv
 from wheelchair_env import WheelchairEnv
 from stable_baselines3 import PPO
@@ -28,19 +29,45 @@ def get_model_config(nn_type: str):
     configs = {
         "cnn": {
             "extractor": LidarCNNFeatureExtractor,
-            "path": f"./models/ppo_wheelchair_cnn_lidar{LIDAR_DIM}",
-            "vecnorm_path": f"./models/vecnormalize_cnn_lidar{LIDAR_DIM}.pkl",
-            "tb_log_name": f"ppo-cnn-lidar{LIDAR_DIM}",
-            "legacy_path": f"./models/ppo_wheelchair_lidar{LIDAR_DIM}",
-            "legacy_vecnorm_path": f"./models/vecnormalize_lidar{LIDAR_DIM}.pkl",
+            "path": f"./models/ppo_wheelchair_cnn_goal_v2_lidar{LIDAR_DIM}",
+            "best_path": f"./models/ppo_wheelchair_cnn_goal_v2_lidar{LIDAR_DIM}_best",
+            "vecnorm_path": f"./models/vecnormalize_cnn_goal_v2_lidar{LIDAR_DIM}.pkl",
+            "best_vecnorm_path": f"./models/vecnormalize_cnn_goal_v2_lidar{LIDAR_DIM}_best.pkl",
+            "tb_log_name": f"ppo-cnn-goal-v2-lidar{LIDAR_DIM}",
+            "legacy_path": None,
+            "legacy_vecnorm_path": None,
+            "ppo_kwargs": {
+                "n_steps": 512,
+                "learning_rate": 3e-5,
+                "batch_size": 1024,
+                "n_epochs": 8,
+                "clip_range": 0.08,
+                "ent_coef": 0.003,
+                "gamma": 0.995,
+                "gae_lambda": 0.95,
+                "target_kl": 0.02,
+            },
         },
         "lstm": {
             "extractor": LidarLSTMFeatureExtractor,
-            "path": f"./models/ppo_wheelchair_lstm_lidar{LIDAR_DIM}",
-            "vecnorm_path": f"./models/vecnormalize_lstm_lidar{LIDAR_DIM}.pkl",
-            "tb_log_name": f"ppo-lstm-lidar{LIDAR_DIM}",
+            "path": f"./models/ppo_wheelchair_lstm_goal_v3_lidar{LIDAR_DIM}",
+            "best_path": f"./models/ppo_wheelchair_lstm_goal_v3_lidar{LIDAR_DIM}_best",
+            "vecnorm_path": f"./models/vecnormalize_lstm_goal_v3_lidar{LIDAR_DIM}.pkl",
+            "best_vecnorm_path": f"./models/vecnormalize_lstm_goal_v3_lidar{LIDAR_DIM}_best.pkl",
+            "tb_log_name": f"ppo-lstm-goal-v3-lidar{LIDAR_DIM}",
             "legacy_path": None,
             "legacy_vecnorm_path": None,
+            "ppo_kwargs": {
+                "n_steps": 256,
+                "learning_rate": 2.5e-5,
+                "batch_size": 512,
+                "n_epochs": 6,
+                "clip_range": 0.05,
+                "ent_coef": 0.001,
+                "gamma": 0.995,
+                "gae_lambda": 0.95,
+                "target_kl": 0.02,
+            },
         },
     }
     return configs[nn_type]
@@ -92,9 +119,10 @@ def train_model(new=False, nn_type="cnn"):
             print(f"Loading VecNormalize stats from {vecnorm_load_path}")
             env = VecNormalize.load(vecnorm_load_path, env)
             env.training = True
+            env.norm_obs = False
             env.norm_reward = False
         else:
-            env = VecNormalize(env, norm_obs=True, norm_reward=False)
+            env = VecNormalize(env, norm_obs=False, norm_reward=False)
 
         if prev_model and not new:
             print(f"Loading previous {nn_type.upper()} model from {model_load_path}")
@@ -111,19 +139,21 @@ def train_model(new=False, nn_type="cnn"):
                 env,
                 policy_kwargs=policy_kwargs,
                 verbose=1,
-                n_steps=128,
-                learning_rate=5e-5,
-                batch_size=1024,
-                n_epochs=20,
-                clip_range=0.1,
-                ent_coef=0.01,
                 device=device,
                 tensorboard_log="logs",
+                **config["ppo_kwargs"],
             )
 
+        print(f"Training target timesteps: {TRAIN_STEPS}")
         print(f"Saving checkpoints to {path}.zip")
         print(f"Saving VecNormalize stats to {vecnorm_path}")
-        metrics_callback = TrainingMetricsCallback(nn_type=nn_type, lidar_dim=LIDAR_DIM)
+        print(f"Saving best checkpoint to {config['best_path']}.zip")
+        metrics_callback = TrainingMetricsCallback(
+            nn_type=nn_type,
+            lidar_dim=LIDAR_DIM,
+            best_model_path=config["best_path"],
+            best_vecnorm_path=config["best_vecnorm_path"],
+        )
         model.learn(
             total_timesteps=TRAIN_STEPS,
             tb_log_name=config["tb_log_name"],
@@ -131,6 +161,10 @@ def train_model(new=False, nn_type="cnn"):
         )
     except KeyboardInterrupt:
         print("Training interrupted by user")
+    except Exception:
+        print("Training stopped because of an exception:")
+        traceback.print_exc()
+        raise
     finally:
         if metrics_callback is not None:
             print("Saving training metrics and plots")
