@@ -89,7 +89,7 @@ def existing_vecnorm_path(path: str, legacy_path: str | None = None) -> str | No
     return None
 
 
-def train_model(new=False, nn_type="cnn"):
+def train_model(new=False, nn_type="cnn", n_robots=N_ROBOTS):
     env = None
     model = None
     metrics_callback = None
@@ -114,7 +114,7 @@ def train_model(new=False, nn_type="cnn"):
         )
         prev_model = model_load_path is not None
 
-        env = DummyVecEnv([env_fn(i) for i in range(N_ROBOTS)])
+        env = DummyVecEnv([env_fn(i) for i in range(n_robots)])
         if vecnorm_load_path is not None and not new:
             print(f"Loading VecNormalize stats from {vecnorm_load_path}")
             env = VecNormalize.load(vecnorm_load_path, env)
@@ -193,9 +193,15 @@ def parse_args():
         default="cnn",
         help="Feature extractor network to use.",
     )
+    parser.add_argument(
+        "--n-robots",
+        type=int,
+        default=N_ROBOTS,
+        help="Number of Webots robot environments to connect to.",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    train_model(new=args.new, nn_type=args.nn)
+    train_model(new=args.new, nn_type=args.nn, n_robots=args.n_robots)

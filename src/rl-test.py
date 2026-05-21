@@ -35,7 +35,7 @@ def get_model_paths(nn_type: str):
     return config["path"], config["vecnorm_path"], False
 
 
-def run_model(nn_type="cnn"):
+def run_model(nn_type="cnn", n_robots=N_ROBOTS):
     """Start vectorized environment to test model in parallel"""
 
     def env_fn(i):
@@ -43,7 +43,7 @@ def run_model(nn_type="cnn"):
             return Monitor(WheelchairEnv(i, lidar_dim=LIDAR_DIM))
         return _init
 
-    env = DummyVecEnv([env_fn(i) for i in range(N_ROBOTS)])
+    env = DummyVecEnv([env_fn(i) for i in range(n_robots)])
     path, vecnorm_path, best_checkpoint = get_model_paths(nn_type)
 
     if not os.path.exists(path + ".zip"):
@@ -62,9 +62,9 @@ def run_model(nn_type="cnn"):
 
     model = PPO.load(path, env=env)
 
-    success_counts = [0] * N_ROBOTS
-    episode_counts = [0] * N_ROBOTS
-    episode_rewards = [0.0] * N_ROBOTS
+    success_counts = [0] * n_robots
+    episode_counts = [0] * n_robots
+    episode_rewards = [0.0] * n_robots
     episode_rows = []
 
     obs = env.reset()
@@ -72,7 +72,7 @@ def run_model(nn_type="cnn"):
         action, _ = model.predict(obs, deterministic=True)
         obs, rewards, dones, infos = env.step(action)
 
-        for i in range(N_ROBOTS):
+        for i in range(n_robots):
             episode_rewards[i] += float(rewards[i])
 
         for i, done in enumerate(dones):
@@ -101,7 +101,7 @@ def run_model(nn_type="cnn"):
 
                 episode_rewards[i] = 0.0
 
-    for i in range(N_ROBOTS):
+    for i in range(n_robots):
         if episode_counts[i] > 0:
             rate = 100 * success_counts[i] / episode_counts[i]
             print(
@@ -116,7 +116,7 @@ def run_model(nn_type="cnn"):
     with open(success_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["robot_id", "successes", "episodes", "success_rate", "lidar_dim"])
-        for i in range(N_ROBOTS):
+        for i in range(n_robots):
             rate = (
                 100 * success_counts[i] / episode_counts[i] if episode_counts[i] else 0
             )
@@ -148,9 +148,15 @@ def parse_args():
         default="cnn",
         help="Model type to test.",
     )
+    parser.add_argument(
+        "--n-robots",
+        type=int,
+        default=N_ROBOTS,
+        help="Number of Webots robot environments to connect to.",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    run_model(nn_type=args.nn)
+    run_model(nn_type=args.nn, n_robots=args.n_robots)

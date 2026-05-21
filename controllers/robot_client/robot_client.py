@@ -25,11 +25,30 @@ class RobotClient(Supervisor):
         7: (-2.55326, 1.63735),
         8: (-1.04326, 1.62735),
     }
+    TRANSFER_FINETUNE_GOAL_POSITIONS = {
+        0: (-4.5, -2.5),
+        1: (0.0, -2.5),
+        2: (4.5, -2.5),
+        3: (-4.5, 1.7),
+        4: (0.0, 1.7),
+        5: (4.5, 1.7),
+        6: (-4.5, 5.8),
+        7: (0.0, 5.8),
+        8: (4.5, 5.8),
+    }
+    REALWORLD_TEST_GOAL_POSITIONS = {
+        0: (4.3, 4.0),
+    }
+    WORLD_GOAL_POSITIONS = {
+        "smart-wheelchairs-transfer-finetune.wbt": TRANSFER_FINETUNE_GOAL_POSITIONS,
+        "smart-wheelchairs-realworld-test.wbt": REALWORLD_TEST_GOAL_POSITIONS,
+    }
 
     def __init__(self, id: int):
         super(RobotClient, self).__init__()
 
         self.id = id
+        self.goal_positions = self.get_world_goal_positions()
 
         context = zmq.Context()
         self.socket = context.socket(zmq.REP)
@@ -183,7 +202,7 @@ class RobotClient(Supervisor):
         return distance
 
     def get_goal_features(self, position, rotation) -> tuple[float | None, float, float]:
-        goal = self.GOAL_POSITIONS.get(self.id)
+        goal = self.goal_positions.get(self.id)
         if goal is None:
             return None, 0.0, 1.0
 
@@ -194,6 +213,13 @@ class RobotClient(Supervisor):
         robot_yaw = self.yaw_from_rotation(rotation)
         goal_bearing = self.normalize_angle(target_yaw - robot_yaw)
         return goal_distance, float(np.sin(goal_bearing)), float(np.cos(goal_bearing))
+
+    def get_world_goal_positions(self) -> dict[int, tuple[float, float]]:
+        try:
+            world_name = os.path.basename(self.getWorldPath())
+        except Exception:
+            world_name = ""
+        return self.WORLD_GOAL_POSITIONS.get(world_name, self.GOAL_POSITIONS)
 
     @staticmethod
     def yaw_from_rotation(rotation) -> float:
