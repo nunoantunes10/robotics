@@ -23,7 +23,7 @@ TexturedBackgroundLight {
   castShadows FALSE
 }
 DEF Giorgio TurtleBot3Burger {
-  translation -4.4 -4.4 0
+  translation 0 -7.2 0
   rotation 0 0 1 1.5708
   name "Giorgio 0"
   controller "robot_client"
@@ -51,8 +51,7 @@ DEF Giorgio TurtleBot3Burger {
   ]
 }
 DEF End_Strip Robot {
-  translation 4.3 4.0 0.03
-  rotation 0 0 1 1.5708
+  translation 0 7.2 0.03
   children [
     Shape {
       appearance Appearance {
@@ -80,125 +79,62 @@ DEF End_Strip Robot {
 DEF Scene Group {
   children [
     Floor {
-      size 11 11
+      size 12 18
       appearance Parquetry {
         type "light strip"
       }
     }
     Wall {
-      translation 0 -5.4 0
+      translation 0 -8.8 0
       name "real_south_boundary"
-      size 11 0.1 0.5
+      size 12 0.1 0.5
     }
     Wall {
-      translation 0 5.4 0
+      translation 0 8.8 0
       name "real_north_boundary"
-      size 11 0.1 0.5
+      size 12 0.1 0.5
     }
     Wall {
-      translation -5.4 0 0
+      translation -5.8 0 0
       name "real_west_boundary"
-      size 0.1 11 0.5
+      size 0.1 18 0.5
     }
     Wall {
-      translation 5.4 0 0
+      translation 5.8 0 0
       name "real_east_boundary"
-      size 0.1 11 0.5
+      size 0.1 18 0.5
     }
     Wall {
-      translation -3.0 -3.35 0
-      name "entry_corridor_left"
-      size 0.1 3.4 0.5
+      translation -1.75 0 0
+      name "vertical_corridor_west_wall"
+      size 0.1 16.8 0.5
     }
     Wall {
-      translation -5.0 -2.55 0
-      name "entry_corridor_right"
-      size 0.1 1.8 0.5
-    }
-    Wall {
-      translation -3.9 -1.65 0
-      rotation 0 0 1 1.5708
-      name "doorway_top_left"
-      size 0.1 1.9 0.5
-    }
-    Wall {
-      translation -1.1 -1.65 0
-      rotation 0 0 1 1.5708
-      name "doorway_top_right"
-      size 0.1 1.8 0.5
-    }
-    Wall {
-      translation -2.1 -0.25 0
-      name "hallway_inner_wall"
-      size 0.1 2.9 0.5
-    }
-    Wall {
-      translation 0.6 -0.25 0
-      name "hallway_outer_wall"
-      size 0.1 2.9 0.5
-    }
-    Wall {
-      translation 2.45 1.2 0
-      rotation 0 0 1 1.5708
-      name "turn_wall_lower"
-      size 0.1 3.8 0.5
-    }
-    Wall {
-      translation 2.45 2.95 0
-      rotation 0 0 1 1.5708
-      name "turn_wall_upper"
-      size 0.1 2.3 0.5
-    }
-    Wall {
-      translation 3.55 3.15 0
-      name "final_corridor_left"
-      size 0.1 2.3 0.5
-    }
-    Wall {
-      translation 5.0 2.65 0
-      name "final_corridor_right"
-      size 0.1 2.6 0.5
+      translation 1.75 0 0
+      name "vertical_corridor_east_wall"
+      size 0.1 16.8 0.5
     }
     Solid {
-      translation -3.95 -2.35 0.25
+      translation -0.95 -5.95 0.25
       children [
         Shape {
           appearance Appearance {
             material Material {
-              diffuseColor 0.48 0.35 0.25
+              diffuseColor 0.55 0.42 0.28
             }
           }
           geometry Box {
-            size 0.95 0.45 0.5
+            size 0.55 1.05 0.5
           }
         }
       ]
-      name "low_table_block"
+      name "vertical_tall_crate_left"
       boundingObject Box {
-        size 0.95 0.45 0.5
+        size 0.55 1.05 0.5
       }
     }
     Solid {
-      translation -1.05 -2.55 0.25
-      children [
-        Shape {
-          appearance Appearance {
-            material Material {
-              diffuseColor 0.35 0.35 0.35
-            }
-          }
-          geometry Box {
-            size 0.45 1.05 0.5
-          }
-        }
-      ]
-      name "cabinet_block"
-      boundingObject Box {
-        size 0.45 1.05 0.5
-      }
-    }
-    Solid {
-      translation -0.75 0.55 0.2
+      translation 0.85 -5.05 0.2
       children [
         Shape {
           appearance Appearance {
@@ -208,42 +144,62 @@ DEF Scene Group {
           }
           geometry Cylinder {
             height 0.4
-            radius 0.28
+            radius 0.3
           }
         }
       ]
-      name "round_table_pillar"
+      name "vertical_round_post_lower"
       boundingObject Cylinder {
         height 0.4
-        radius 0.28
+        radius 0.3
       }
     }
     Solid {
-      translation 1.35 0.4 0.25
+      translation 0 -3.85 0.25
+      rotation 0 0 1 0.35
       children [
         Shape {
           appearance Appearance {
             material Material {
-              diffuseColor 0.5 0.4 0.3
+              diffuseColor 0.35 0.37 0.4
             }
           }
           geometry Box {
-            size 0.55 1.35 0.5
+            size 1.25 0.22 0.5
           }
         }
       ]
-      name "sofa_like_block"
+      name "vertical_slanted_bar_lower"
       boundingObject Box {
-        size 0.55 1.35 0.5
+        size 1.25 0.22 0.5
       }
     }
     Solid {
-      translation 2.15 2.05 0.2
+      translation 1.0 -2.45 0.25
       children [
         Shape {
           appearance Appearance {
             material Material {
-              diffuseColor 0.45 0.45 0.45
+              diffuseColor 0.5 0.45 0.34
+            }
+          }
+          geometry Box {
+            size 0.42 1.35 0.5
+          }
+        }
+      ]
+      name "vertical_narrow_cabinet_right"
+      boundingObject Box {
+        size 0.42 1.35 0.5
+      }
+    }
+    Solid {
+      translation -0.78 -1.25 0.2
+      children [
+        Shape {
+          appearance Appearance {
+            material Material {
+              diffuseColor 0.48 0.48 0.48
             }
           }
           geometry Cylinder {
@@ -252,29 +208,129 @@ DEF Scene Group {
           }
         }
       ]
-      name "turn_apex_column"
+      name "vertical_round_post_mid_left"
       boundingObject Cylinder {
         height 0.4
         radius 0.24
       }
     }
     Solid {
-      translation 4.25 2.25 0.25
+      translation 0.15 0.15 0.25
       children [
         Shape {
           appearance Appearance {
             material Material {
-              diffuseColor 0.45 0.32 0.22
+              diffuseColor 0.46 0.36 0.27
             }
           }
           geometry Box {
-            size 0.75 0.42 0.5
+            size 0.9 0.9 0.5
           }
         }
       ]
-      name "final_furniture_block"
+      name "vertical_square_table_center"
       boundingObject Box {
-        size 0.75 0.42 0.5
+        size 0.9 0.9 0.5
+      }
+    }
+    Solid {
+      translation -1.0 1.65 0.25
+      children [
+        Shape {
+          appearance Appearance {
+            material Material {
+              diffuseColor 0.37 0.37 0.37
+            }
+          }
+          geometry Box {
+            size 0.38 1.1 0.5
+          }
+        }
+      ]
+      name "vertical_tall_block_left"
+      boundingObject Box {
+        size 0.38 1.1 0.5
+      }
+    }
+    Solid {
+      translation 0.95 2.55 0.2
+      children [
+        Shape {
+          appearance Appearance {
+            material Material {
+              diffuseColor 0.44 0.44 0.44
+            }
+          }
+          geometry Cylinder {
+            height 0.4
+            radius 0.28
+          }
+        }
+      ]
+      name "vertical_round_post_upper_right"
+      boundingObject Cylinder {
+        height 0.4
+        radius 0.28
+      }
+    }
+    Solid {
+      translation -0.15 3.95 0.25
+      rotation 0 0 1 -0.45
+      children [
+        Shape {
+          appearance Appearance {
+            material Material {
+              diffuseColor 0.52 0.4 0.3
+            }
+          }
+          geometry Box {
+            size 1.35 0.2 0.5
+          }
+        }
+      ]
+      name "vertical_slanted_bar_upper"
+      boundingObject Box {
+        size 1.35 0.2 0.5
+      }
+    }
+    Solid {
+      translation -0.95 5.35 0.25
+      children [
+        Shape {
+          appearance Appearance {
+            material Material {
+              diffuseColor 0.34 0.38 0.42
+            }
+          }
+          geometry Box {
+            size 0.5 0.75 0.5
+          }
+        }
+      ]
+      name "vertical_short_block_goal_left"
+      boundingObject Box {
+        size 0.5 0.75 0.5
+      }
+    }
+    Solid {
+      translation 0.75 6.15 0.2
+      children [
+        Shape {
+          appearance Appearance {
+            material Material {
+              diffuseColor 0.5 0.5 0.5
+            }
+          }
+          geometry Cylinder {
+            height 0.4
+            radius 0.22
+          }
+        }
+      ]
+      name "vertical_round_post_goal_right"
+      boundingObject Cylinder {
+        height 0.4
+        radius 0.22
       }
     }
   ]

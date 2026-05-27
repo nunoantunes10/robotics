@@ -37,7 +37,7 @@ class RobotClient(Supervisor):
         8: (4.5, 5.8),
     }
     REALWORLD_TEST_GOAL_POSITIONS = {
-        0: (4.3, 4.0),
+        0: (0.0, 7.2),
     }
     WORLD_GOAL_POSITIONS = {
         "smart-wheelchairs-transfer-finetune.wbt": TRANSFER_FINETUNE_GOAL_POSITIONS,

@@ -561,34 +561,24 @@ DEF Scene Group {
       size 0.1 14 0.5
     }
     Wall {
-      translation -2.25 -4.2 0
-      name "lane_wall_bottom_left"
-      size 0.08 4.6 0.5
+      translation -2.25 0 0
+      name "left_lane_divider"
+      size 0.08 13.6 0.5
     }
     Wall {
-      translation 2.25 -4.2 0
-      name "lane_wall_bottom_right"
-      size 0.08 4.6 0.5
+      translation 2.25 0 0
+      name "right_lane_divider"
+      size 0.08 13.6 0.5
     }
     Wall {
-      translation -2.25 0.2 0
-      name "lane_wall_middle_left"
-      size 0.08 4.2 0.5
+      translation 0 -1.9 0
+      name "bottom_middle_row_divider"
+      size 13.6 0.08 0.5
     }
     Wall {
-      translation 2.25 0.2 0
-      name "lane_wall_middle_right"
-      size 0.08 4.2 0.5
-    }
-    Wall {
-      translation -2.25 4.55 0
-      name "lane_wall_top_left"
-      size 0.08 4.4 0.5
-    }
-    Wall {
-      translation 2.25 4.55 0
-      name "lane_wall_top_right"
-      size 0.08 4.4 0.5
+      translation 0 2.2 0
+      name "middle_top_row_divider"
+      size 13.6 0.08 0.5
     }
     Solid {
       translation -4.95 -4.85 0.2
