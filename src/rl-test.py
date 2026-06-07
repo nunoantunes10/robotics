@@ -1,4 +1,7 @@
 import os
+import argparse
+import sys
+import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from wheelchair_env import WheelchairEnv
@@ -10,7 +13,28 @@ N_ROBOTS = 9
 LIDAR_DIM = 360
 
 
-def run_model():
+def patch_numpy_pickle_modules():
+    """Allow NumPy 2.x pickles to load in NumPy 1.x environments."""
+    if not hasattr(np, "_core"):
+        sys.modules["numpy._core"] = np.core
+        sys.modules["numpy._core.numeric"] = np.core.numeric
+        sys.modules["numpy._core.multiarray"] = np.core.multiarray
+        sys.modules["numpy._core.umath"] = np.core.umath
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Test a trained PPO model in Webots.")
+    parser.add_argument(
+        "-n",
+        "--robots",
+        type=int,
+        default=N_ROBOTS,
+        help=f"Number of robot clients to test. Default: {N_ROBOTS}",
+    )
+    return parser.parse_args()
+
+
+def run_model(n_robots=N_ROBOTS):
     """Start vectorized environment to test model in parallel"""
 
     def env_fn(i):
@@ -18,9 +42,10 @@ def run_model():
             return Monitor(WheelchairEnv(i, lidar_dim=LIDAR_DIM))
         return _init
 
-    env = DummyVecEnv([env_fn(i) for i in range(N_ROBOTS)])
-    path = f"./models/ppo_wheelchair_lidar{LIDAR_DIM}"
-    vecnorm_path = f"./models/vecnormalize_lidar{LIDAR_DIM}.pkl"
+    env = DummyVecEnv([env_fn(i) for i in range(n_robots)])
+    path = f"./models/ppo_wheelchair_lidar{LIDAR_DIM}_human"
+    vecnorm_path = f"./models/vecnormalize_lidar{LIDAR_DIM}_human.pkl"
+    patch_numpy_pickle_modules()
     env = VecNormalize.load(vecnorm_path, env)
     env.training = False
     env.norm_reward = False
@@ -31,9 +56,9 @@ def run_model():
 
     model = PPO.load(path, env)
 
-    success_counts = [0] * N_ROBOTS
-    episode_counts = [0] * N_ROBOTS
-    episode_rewards = [0.0] * N_ROBOTS
+    success_counts = [0] * n_robots
+    episode_counts = [0] * n_robots
+    episode_rewards = [0.0] * n_robots
     episode_rows = []
 
     obs = env.reset()
@@ -41,7 +66,7 @@ def run_model():
         action, _ = model.predict(obs, deterministic=True)
         obs, rewards, dones, infos = env.step(action)
 
-        for i in range(N_ROBOTS):
+        for i in range(n_robots):
             episode_rewards[i] += float(rewards[i])
 
         for i, done in enumerate(dones):
@@ -70,7 +95,7 @@ def run_model():
 
                 episode_rewards[i] = 0.0
 
-    for i in range(N_ROBOTS):
+    for i in range(n_robots):
         if episode_counts[i] > 0:
             rate = 100 * success_counts[i] / episode_counts[i]
             print(
@@ -82,7 +107,7 @@ def run_model():
     with open("success_rates.csv", "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["robot_id", "successes", "episodes", "success_rate", "lidar_dim"])
-        for i in range(N_ROBOTS):
+        for i in range(n_robots):
             rate = (
                 100 * success_counts[i] / episode_counts[i] if episode_counts[i] else 0
             )
@@ -105,4 +130,5 @@ def run_model():
 
 
 if __name__ == "__main__":
-    run_model()
+    args = parse_args()
+    run_model(n_robots=args.robots)
