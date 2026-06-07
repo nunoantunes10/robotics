@@ -25,8 +25,8 @@ def train_model(new=False):
 
             return _init
 
-        path = f"./models/ppo_wheelchair_lidar{LIDAR_DIM}"
-        vecnorm_path = f"./models/vecnormalize_lidar{LIDAR_DIM}.pkl"
+        path = f"./models/ppo_wheelchair_lidar{LIDAR_DIM}_human"
+        vecnorm_path = f"./models/vecnormalize_lidar{LIDAR_DIM}_human.pkl"
         prev_model = os.path.exists(path + ".zip")
 
         env = DummyVecEnv([env_fn(i) for i in range(N_ROBOTS)])
@@ -62,7 +62,7 @@ def train_model(new=False):
                 n_epochs=20,
                 clip_range=0.1,
                 ent_coef=0.01,
-                device="cuda" if cuda.is_available() else "cpu",
+                device="cpu",
                 tensorboard_log="logs",
             )
 

@@ -54,6 +54,21 @@ class RobotClient(Supervisor):
 
         self.reset_robot()
 
+    def save_positions(self, episode_id: int) -> None:
+        if not self.positions:
+            return
+
+        log_dir = os.path.join(os.path.dirname(__file__), "../..", "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        with open(
+            os.path.join(log_dir, f"positions_{self.id}_{episode_id}.csv"),
+            "w",
+            newline="",
+        ) as f:
+            writer = csv.writer(f)
+            writer.writerow(["x", "y"])
+            writer.writerows(self.positions)
+
     def reset_robot(self, rotate=True) -> None:
         """Resets the robot to its initial position."""
         self.robot_node.getField("translation").setSFVec3f(self.initial_position)
@@ -77,6 +92,7 @@ class RobotClient(Supervisor):
 
             action = self.get_action()
             if action.shape != (2,):
+                self.save_positions(it)
                 break
 
             self.update_motors(action)
@@ -87,17 +103,7 @@ class RobotClient(Supervisor):
             end = self.detect_end()
 
             if collided or end:
-                log_dir = os.path.join(os.path.dirname(__file__), "../..", "logs")
-                os.makedirs(log_dir, exist_ok=True)
-                with open(
-                    os.path.join(log_dir, f"positions_{self.id}_{it}.csv"),
-                    "w",
-                    newline="",
-                ) as f:
-                    writer = csv.writer(f)
-                    writer.writerow(["x", "y"])
-                    writer.writerows(self.positions)
-
+                self.save_positions(it)
                 self.positions = []
                 it += 1
                 self.reset_robot()
