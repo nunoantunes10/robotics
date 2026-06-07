@@ -1,0 +1,64 @@
+#VRML_SIM R2025a utf8
+# Describe the functionality of your PROTO here.
+# template language: javascript
+
+
+PROTO TJunction [
+  field SFVec3f    translation     0 0 0
+  field SFRotation rotation        0 0 1 0
+  field SFString   name            "t_junction"
+  field SFFloat    width           1.4
+  field SFFloat    height          0.5
+  field SFFloat    wallThickness   0.1     
+  field SFNode     wallAppearance  PBRAppearance { baseColor 0.8 0.8 0.8 roughness 1 metalness 0 }
+  field SFNode     floorAppearance PBRAppearance { baseColor 0.4 0.4 0.4 roughness 1 metalness 0 }
+]
+{
+  %<
+    const w = fields.width.value;
+    const h = fields.height.value;
+    const t = fields.wallThickness.value;
+
+    const floorZ = -t / 2;
+    const wallZ = h / 2;
+    const shiftX = w / 2; 
+    
+    const frontWallX = w + (t / 2);
+    const frontWallLength = w + (t * 2);
+  >%
+  Solid {
+    translation IS translation
+    rotation IS rotation
+    name IS name
+    children [
+      # Floor
+      Transform {
+        translation %<= shiftX >% 0 %<= floorZ >%
+        children [
+          Shape {
+            appearance IS floorAppearance
+            geometry Box { size %<= w >% %<= w >% %<= t >% }
+          }
+        ]
+      }
+      # Front Wall
+      Transform {
+        translation %<= frontWallX >% 0 %<= wallZ >%
+        children [
+          Shape {
+            appearance IS wallAppearance
+            geometry Box { size %<= t >% %<= frontWallLength >% %<= h >% }
+          }
+        ]
+      }
+    ]
+    boundingObject Group {
+      children [
+        # Floor
+        Transform { translation %<= shiftX >% 0 %<= floorZ >% children [ Box { size %<= w >% %<= w >% %<= t >% } ] }
+        # Front Wall
+        Transform { translation %<= frontWallX >% 0 %<= wallZ >% children [ Box { size %<= t >% %<= frontWallLength >% %<= h >% } ] }
+      ]
+    }
+  }
+}
