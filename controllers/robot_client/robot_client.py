@@ -113,6 +113,8 @@ class RobotClient(Supervisor):
                 prev_action=0,  # placeholder, will be set in env
                 collided=collided,
                 goal_reached=end,
+                position=np.array(pos[:2], dtype=np.float64),
+                yaw=self.get_yaw(),
             )
 
             self.send_observation(state)
@@ -139,6 +141,21 @@ class RobotClient(Supervisor):
         right_speed = action[0] + action[1] * self.l / 2
         self.left_motor.setVelocity(left_speed)
         self.right_motor.setVelocity(right_speed)
+
+    def get_yaw(self):
+        rotation = self.robot_node.getField("rotation").getSFRotation()
+        axis_x, axis_y, axis_z, angle = rotation
+        axis = np.array([axis_x, axis_y, axis_z], dtype=np.float64)
+        norm = np.linalg.norm(axis)
+        if norm == 0:
+            return None
+
+        axis = axis / norm
+        if np.allclose(axis, np.array([0.0, 0.0, 1.0]), atol=1e-3):
+            return float(angle)
+        if np.allclose(axis, np.array([0.0, 0.0, -1.0]), atol=1e-3):
+            return float(-angle)
+        return None
 
     def read_observation(self) -> np.ndarray:
         """Clip to avoid inf or nan values"""
