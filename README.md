@@ -1,5 +1,124 @@
 # rl-webots
 
+## Transfer comparison pipeline
+
+`src/rl-experiment-pipeline.py` is being implemented in stages. Stage 6 creates
+the run folder, validates static inputs, parses robot IDs from the Webots world
+files, writes `config.json`, can launch Webots, can train selected models, and
+can evaluate available models. It also generates summaries/reports/plots and can
+optionally use early stopping with best-checkpoint saving.
+
+Check the planned configuration:
+
+```bash
+python3 src/rl-experiment-pipeline.py \
+  --train-world worlds/smart-wheelchairs-transfer-finetune.wbt \
+  --eval-world worlds/smart-wheelchairs-realworld-test.wbt \
+  --output-root outputs/pipeline \
+  --phase check
+```
+
+`--check-only` is an alias for `--phase check`:
+
+```bash
+python3 src/rl-experiment-pipeline.py \
+  --train-world worlds/smart-wheelchairs-transfer-finetune.wbt \
+  --eval-world worlds/smart-wheelchairs-realworld-test.wbt \
+  --output-root outputs/pipeline \
+  --check-only
+```
+
+The staged interface is:
+
+```bash
+python3 src/rl-experiment-pipeline.py --phase check
+python3 src/rl-experiment-pipeline.py --phase train
+python3 src/rl-experiment-pipeline.py --phase eval
+python3 src/rl-experiment-pipeline.py --phase report
+python3 src/rl-experiment-pipeline.py --phase all
+```
+
+Resume a previous run folder for later stages:
+
+```bash
+python3 src/rl-experiment-pipeline.py \
+  --resume-run outputs/pipeline/YYYYMMDD_HHMMSS_transfer_comparison \
+  --phase report
+```
+
+Stage 6 training, evaluation, and reporting commands:
+
+```bash
+python3 src/rl-experiment-pipeline.py --phase train --launch-webots
+python3 src/rl-experiment-pipeline.py --phase train --experiments scratch
+python3 src/rl-experiment-pipeline.py --phase train --experiments transfer_finetune,transfer_goal_direction
+python3 src/rl-experiment-pipeline.py --phase eval --launch-webots
+python3 src/rl-experiment-pipeline.py --phase eval --resume-run outputs/pipeline/YYYYMMDD_HHMMSS_transfer_comparison
+python3 src/rl-experiment-pipeline.py --phase eval --eval-checkpoint best --resume-run outputs/pipeline/YYYYMMDD_HHMMSS_transfer_comparison
+python3 src/rl-experiment-pipeline.py --phase report --resume-run outputs/pipeline/YYYYMMDD_HHMMSS_transfer_comparison
+python3 src/rl-experiment-pipeline.py --phase all --launch-webots
+```
+
+Long-running phases write timestamped progress messages to stdout and append them
+to:
+
+```text
+outputs/pipeline/YYYYMMDD_HHMMSS_transfer_comparison/logs/progress.log
+outputs/pipeline/YYYYMMDD_HHMMSS_transfer_comparison/<experiment>/logs/progress.log
+```
+
+Control the training/evaluation progress interval with `--progress-log-freq`:
+
+```bash
+python3 src/rl-experiment-pipeline.py \
+  --phase train \
+  --launch-webots \
+  --progress-log-freq 10000
+```
+
+The train commands start real PPO training. The eval commands start real Webots
+interaction and evaluate available models on
+`worlds/smart-wheelchairs-realworld-test.wbt`. Use `--launch-webots` to let the
+pipeline open and close worlds automatically, or open the required world manually
+before running without `--launch-webots`.
+
+When multiple experiments are selected with `--launch-webots`, the pipeline
+restarts the training world for each experiment so robot clients are fresh after
+the previous environment closes. Evaluation similarly restarts the evaluation
+world per model in automatic mode. Without `--launch-webots`, reload the active
+world between experiments/models if robot clients do not reconnect.
+
+Early stopping is optional and only affects stopping/checkpointing on the active
+training world. The official comparison still comes from evaluation on
+`worlds/smart-wheelchairs-realworld-test.wbt`.
+
+```bash
+python3 src/rl-experiment-pipeline.py \
+  --phase train \
+  --launch-webots \
+  --early-stop \
+  --eval-freq 50000 \
+  --early-stop-patience 5 \
+  --early-stop-min-delta 1.0 \
+  --early-stop-min-timesteps 200000
+```
+
+Tiny early-stopping smoke test only, not a real experiment:
+
+```bash
+python3 src/rl-experiment-pipeline.py \
+  --phase train \
+  --launch-webots \
+  --experiments scratch \
+  --max-timesteps 5000 \
+  --early-stop \
+  --eval-freq 1000 \
+  --early-stop-eval-episodes 2 \
+  --early-stop-patience 2 \
+  --early-stop-min-timesteps 1000 \
+  --overwrite
+```
+
 ## Transfer fine-tuning
 
 The transfer workflow reuses the existing PPO model and `VecNormalize` statistics,
