@@ -1,0 +1,76 @@
+#VRML_SIM R2025a utf8
+# Describe the functionality of your PROTO here.
+# template language: javascript
+
+
+PROTO CorridorCorner [
+  field SFVec3f    translation     0 0 0
+  field SFRotation rotation        0 0 1 0
+  field SFString   name            "corner"
+  field SFFloat    width           1.4
+  field SFFloat    height          0.5
+  field SFFloat    wallThickness   0.1
+  field SFNode     wallAppearance  PBRAppearance { baseColor 0.8 0.8 0.8 roughness 1 metalness 0 }
+  field SFNode     floorAppearance PBRAppearance { baseColor 0.4 0.4 0.4 roughness 1 metalness 0 }
+]
+{
+  %<
+    const w = fields.width.value;
+    const h = fields.height.value;
+    const t = fields.wallThickness.value;
+    
+    const floorZ = -t / 2;
+    const wallZ = h / 2;
+    
+    const outOffset = (w / 2) + (t / 2);
+    const shiftX = t / 2; 
+  >%
+  Solid {
+    translation IS translation
+    rotation IS rotation
+    name IS name
+    children [
+      # Floor
+      Transform {
+        translation 0 0 %<= floorZ >%
+        children [
+          Shape {
+            appearance IS floorAppearance
+            geometry Box { size %<= w >% %<= w >% %<= t >% }
+          }
+        ]
+      }
+      # Wall (X Axis)
+      Transform {
+        translation %<= shiftX >% %<= outOffset >% %<= wallZ >%
+        children [
+          Shape {
+            appearance IS wallAppearance
+            # width'w' + thickness 't'
+            geometry Box { size %<= w + t >% %<= t >% %<= h >% }
+          }
+        ]
+      }
+      # Wall (Y Axis)
+      Transform {
+        translation %<= outOffset >% 0 %<= wallZ >%
+        children [
+          Shape {
+            appearance IS wallAppearance
+            geometry Box { size %<= t >% %<= w >% %<= h >% }
+          }
+        ]
+      }
+    ]
+    boundingObject Group {
+      children [
+        # Floor
+        Transform { translation 0 0 %<= floorZ >% children [ Box { size %<= w >% %<= w >% %<= t >% } ] }
+        # Wall (X Axis)
+        Transform { translation %<= shiftX >% %<= outOffset >% %<= wallZ >% children [ Box { size %<= w + t >% %<= t >% %<= h >% } ] }
+        # Wall (Y Axis)
+        Transform { translation %<= outOffset >% 0 %<= wallZ >% children [ Box { size %<= t >% %<= w >% %<= h >% } ] }
+      ]
+    }
+  }
+}

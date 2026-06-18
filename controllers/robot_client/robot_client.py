@@ -18,7 +18,11 @@ class RobotClient(Supervisor):
 
         context = zmq.Context()
         self.socket = context.socket(zmq.REP)
-        self.socket.connect("ipc:///tmp/giorgio_" + str(id))
+        if sys.platform == "win32":
+            port = 10000 + int(id)
+            self.socket.connect(f"tcp://127.0.0.1:{port}")
+        else:
+            self.socket.connect(f"ipc:///tmp/giorgio_{id}")
 
         self.timestep = int(self.getBasicTimeStep())
         self.positions = []
@@ -50,6 +54,21 @@ class RobotClient(Supervisor):
 
         self.reset_robot()
 
+    def save_positions(self, episode_id: int) -> None:
+        if not self.positions:
+            return
+
+        log_dir = os.path.join(os.path.dirname(__file__), "../..", "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        with open(
+            os.path.join(log_dir, f"positions_{self.id}_{episode_id}.csv"),
+            "w",
+            newline="",
+        ) as f:
+            writer = csv.writer(f)
+            writer.writerow(["x", "y"])
+            writer.writerows(self.positions)
+
     def reset_robot(self, rotate=True) -> None:
         """Resets the robot to its initial position."""
         self.robot_node.getField("translation").setSFVec3f(self.initial_position)
@@ -73,6 +92,7 @@ class RobotClient(Supervisor):
 
             action = self.get_action()
             if action.shape != (2,):
+                self.save_positions(it)
                 break
 
             self.update_motors(action)
@@ -83,15 +103,7 @@ class RobotClient(Supervisor):
             end = self.detect_end()
 
             if collided or end:
-                with open(
-                    f"/home/marco-vb/ros/rl-webots/data/positions/{self.id}/t_{it}.csv",
-                    "w",
-                    newline="",
-                ) as f:
-                    writer = csv.writer(f)
-                    writer.writerow(["x", "y"])
-                    writer.writerows(self.positions)
-
+                self.save_positions(it)
                 self.positions = []
                 it += 1
                 self.reset_robot()
@@ -101,6 +113,8 @@ class RobotClient(Supervisor):
                 prev_action=0,  # placeholder, will be set in env
                 collided=collided,
                 goal_reached=end,
+                position=np.array(pos[:2], dtype=np.float64),
+                yaw=self.get_yaw(),
             )
 
             self.send_observation(state)
@@ -109,7 +123,6 @@ class RobotClient(Supervisor):
 
         print("Trajectory saved, resetting robot...")
         self.reset_robot(rotate=False)
-        sys.exit(0)
 
     def get_action(self) -> np.ndarray:
         """Open pipe and read action from server"""
@@ -129,9 +142,35 @@ class RobotClient(Supervisor):
         self.left_motor.setVelocity(left_speed)
         self.right_motor.setVelocity(right_speed)
 
+    def get_yaw(self):
+        rotation = self.robot_node.getField("rotation").getSFRotation()
+        axis_x, axis_y, axis_z, angle = rotation
+        axis = np.array([axis_x, axis_y, axis_z], dtype=np.float64)
+        norm = np.linalg.norm(axis)
+        if norm == 0:
+            return None
+
+        axis = axis / norm
+        if np.allclose(axis, np.array([0.0, 0.0, 1.0]), atol=1e-3):
+            return float(angle)
+        if np.allclose(axis, np.array([0.0, 0.0, -1.0]), atol=1e-3):
+            return float(-angle)
+        return None
+
     def read_observation(self) -> np.ndarray:
         """Clip to avoid inf or nan values"""
-        return np.clip(np.array(self.lidar.getRangeImage()), 0, 10)
+        try:
+            image = self.lidar.getRangeImage()
+        except ValueError:
+            # Handle Webots ValueError: NULL pointer access before first update
+            image = None
+
+        if not image:
+            res = self.lidar.getHorizontalResolution()
+            layers = self.lidar.getNumberOfLayers()
+            image = [10.0] * (res * layers)
+            
+        return np.clip(np.array(image), 0, 10)
 
     def detect_collision(self) -> bool:
         """Bumper value is 1 if collision is detected, else 0"""

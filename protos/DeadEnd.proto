@@ -1,0 +1,90 @@
+#VRML_SIM R2025a utf8
+# Describe the functionality of your PROTO here.
+# template language: javascript
+
+
+PROTO DeadEnd [
+  field SFVec3f    translation     0 0 0
+  field SFRotation rotation        0 0 1 0
+  field SFString   name            "dead_end"
+  field SFFloat    length          0.5
+  field SFFloat    width           1.4
+  field SFFloat    height          0.5
+  field SFFloat    wallThickness   0.1
+  field SFNode     wallAppearance  PBRAppearance { baseColor 0.8 0.8 0.8 roughness 1 metalness 0 }
+  field SFNode     floorAppearance PBRAppearance { baseColor 0.4 0.4 0.4 roughness 1 metalness 0 }
+]
+{
+  %<
+    const l = fields.length.value;
+    const w = fields.width.value;
+    const h = fields.height.value;
+    const t = fields.wallThickness.value;
+    const shiftX = l / 2; 
+    
+    const floorZ = -t / 2;
+    const wallY = (w / 2) + (t / 2);
+    const wallZ = h / 2;
+    
+    const endWallX = l - (t / 2);
+  >%
+  Solid {
+    translation IS translation
+    rotation IS rotation
+    name IS name
+    children [
+      # Floor
+      Transform {
+        translation %<= shiftX >% 0 %<= floorZ >%
+        children [
+          Shape {
+            appearance IS floorAppearance
+            geometry Box { size %<= l >% %<= w >% %<= t >% }
+          }
+        ]
+      }
+      # Left Wall
+      Transform {
+        translation %<= shiftX >% %<= wallY >% %<= wallZ >%
+        children [
+          Shape {
+            appearance IS wallAppearance
+            geometry Box { size %<= l >% %<= t >% %<= h >% }
+          }
+        ]
+      }
+      # Right Wall
+      Transform {
+        translation %<= shiftX >% %<= -wallY >% %<= wallZ >%
+        children [
+          Shape {
+            appearance IS wallAppearance
+            geometry Box { size %<= l >% %<= t >% %<= h >% }
+          }
+        ]
+      }
+      # End Wall
+      Transform {
+        translation %<= endWallX >% 0 %<= wallZ >%
+        children [
+          Shape {
+            appearance IS wallAppearance
+            geometry Box { size %<= t >% %<= w >% %<= h >% }
+          }
+        ]
+      }
+    ]
+    boundingObject Group {
+      children [
+        # Floor
+        Transform { translation %<= shiftX >% 0 %<= floorZ >% children [ Box { size %<= l >% %<= w >% %<= t >% } ] }
+        # Left Wall
+        Transform { translation %<= shiftX >% %<= wallY >% %<= wallZ >% children [ Box { size %<= l >% %<= t >% %<= h >% } ] }
+        # Right Wall
+        Transform { translation %<= shiftX >% %<= -wallY >% %<= wallZ >% children [ Box { size %<= l >% %<= t >% %<= h >% } ] }
+        # End Wall
+        Transform { translation %<= endWallX >% 0 %<= wallZ >% children [ Box { size %<= t >% %<= w >% %<= h >% } ] }
+      ]
+    }
+  }
+}
